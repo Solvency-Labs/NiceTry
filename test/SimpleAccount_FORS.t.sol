@@ -9,11 +9,16 @@ import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
 import {FORS_SIG_LEN} from "../src/Verifiers/ForsVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /// @dev Mock verifier — test pre-sets the address recover() should return.
 contract MockForsVerifier is IForsVerifier {
     address public _recovered;
-    function setRecovered(address a) external { _recovered = a; }
+
+    function setRecovered(address a) external {
+        _recovered = a;
+    }
+
     function recover(bytes calldata, bytes32) external view returns (address) {
         return _recovered;
     }
@@ -57,7 +62,7 @@ contract SimpleAccountForsTest is Test {
     }
 
     function test_cannotReinitialize() public {
-        vm.expectRevert("ForsAccount: already initialized");
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         account.initialize(makeAddr("attacker"));
     }
 
@@ -162,6 +167,18 @@ contract SimpleAccountForsTest is Test {
         assertEq(ENTRYPOINT.balance, before + 0.1 ether);
     }
 
+    function test_revertsIfPrefundTransferFails() public {
+        verifier.setRecovered(owner0);
+        bytes memory callData = _execCalldata(recipient, 0, "", owner1);
+        PackedUserOperation memory op = _userOp(callData, _dummyBlob());
+
+        vm.prank(ENTRYPOINT);
+        vm.expectRevert("ForsAccount: prefund failed");
+        account.validateUserOp(op, keccak256("op"), address(account).balance + 1);
+
+        assertEq(account.owner(), owner0);
+    }
+
     function test_multiTxRotationChain() public {
         verifier.setRecovered(owner0);
         _validate(owner0, owner1, keccak256("op0"));
@@ -182,12 +199,26 @@ contract SimpleAccountForsTest is Test {
         assertEq(recipient.balance, 1 ether);
     }
 
+    function test_ownerCannotWithdrawDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("ForsAccount: not from EntryPoint or account");
+        account.withdrawDepositTo(payable(recipient), 0);
+    }
+
+    function test_ownerCannotAddDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("ForsAccount: not from EntryPoint or account");
+        account.addDeposit();
+    }
+
     function test_executeBatch() public {
         address r2 = makeAddr("r2");
         address[] memory targets = new address[](2);
-        targets[0] = recipient; targets[1] = r2;
+        targets[0] = recipient;
+        targets[1] = r2;
         uint256[] memory values = new uint256[](2);
-        values[0] = 1 ether; values[1] = 2 ether;
+        values[0] = 1 ether;
+        values[1] = 2 ether;
         bytes[] memory datas = new bytes[](2);
 
         vm.prank(ENTRYPOINT);
@@ -208,21 +239,18 @@ contract SimpleAccountForsTest is Test {
     // =========================================================================
 
     function _execCalldata(address to, uint256 value, bytes memory data, address nextOwner)
-        internal view returns (bytes memory)
+        internal
+        view
+        returns (bytes memory)
     {
-        return abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, to, value, data),
-            bytes20(nextOwner)
-        );
+        return abi.encodePacked(abi.encodeWithSelector(account.execute.selector, to, value, data), bytes20(nextOwner));
     }
 
     function _dummyBlob() internal pure returns (bytes memory) {
         return new bytes(FORS_SIG_LEN);
     }
 
-    function _userOp(bytes memory callData, bytes memory sig)
-        internal view returns (PackedUserOperation memory)
-    {
+    function _userOp(bytes memory callData, bytes memory sig) internal view returns (PackedUserOperation memory) {
         return PackedUserOperation({
             sender: address(account),
             nonce: 0,
@@ -236,7 +264,14 @@ contract SimpleAccountForsTest is Test {
         });
     }
 
-    function _validate(address /*signer*/, address nextOwner, bytes32 userOpHash) internal {
+    function _validate(
+        address,
+        /*signer*/
+        address nextOwner,
+        bytes32 userOpHash
+    )
+        internal
+    {
         bytes memory callData = _execCalldata(recipient, 0, "", nextOwner);
         PackedUserOperation memory op = _userOp(callData, _dummyBlob());
 

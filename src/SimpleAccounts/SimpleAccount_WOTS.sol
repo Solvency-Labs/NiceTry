@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IAccount} from "account-abstraction/interfaces/IAccount.sol";
+import {BaseAccount} from "account-abstraction/core/BaseAccount.sol";
+import {SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED} from "account-abstraction/core/Helpers.sol";
+import {Exec} from "account-abstraction/utils/Exec.sol";
+import {TokenCallbackHandler} from "account-abstraction/accounts/callback/TokenCallbackHandler.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {IWotsCVerifier} from "../Interfaces/IWotsCVerifier.sol";
 import {WOTS_BLOB_LEN} from "../Verifiers/WotsCVerifier.sol";
 
@@ -12,137 +16,132 @@ import {WOTS_BLOB_LEN} from "../Verifiers/WotsCVerifier.sol";
 ///         automatic main-signer rotation on every UserOp, and a pool of
 ///         pre-committed spare keys.
 ///
-///         Signer roles:
-///           - main owner: rotated on every successful UserOp via the last
-///             20 bytes of userOp.callData.
-///           - spare keys: pre-committed WOTS+C addresses registered by the
-///             main owner. Each spare key can sign ONE UserOp (arbitrary
-///             content). After use it is permanently tombstoned and can
-///             never be re-registered. Main still rotates via the callData
-///             tail when a spare key authorizes.
-///
-///         Authorization (unified, no selector dispatch):
-///           1. Recover signer from WOTS+C blob via VERIFIER.wrecover(sig, hash).
-///           2. If recovered == owner: authorized (main path).
-///           3. Else if spareKeys[recovered] == ACTIVE: authorized, transition
-///              to CONSUMED atomically.
-///           4. Else: reject.
-///           5. On authorized path, rotate main owner to callData's last 20 bytes.
-///
 ///         userOp.signature = [WOTS_BLOB_LEN bytes WOTS+C blob]
 ///         userOp.callData  = [... any call ...][20 bytes nextOwner]
-contract SimpleAccount_WOTS is IAccount {
-
-    // Spare-key state machine. Once CONSUMED or TOMBSTONED, an address can
-    // never be re-registered — protects against accidental reuse of a key
-    // whose history has leaked.
-    uint8 internal constant SPARE_NONE      = 0;
-    uint8 internal constant SPARE_ACTIVE    = 1;
+contract SimpleAccount_WOTS is BaseAccount, TokenCallbackHandler, Initializable {
+    // Spare-key state machine. Once tombstoned, an address can never be
+    // re-registered; this avoids accidental reuse of leaked one-time keys.
+    uint8 internal constant SPARE_NONE = 0;
+    uint8 internal constant SPARE_ACTIVE = 1;
     uint8 internal constant SPARE_TOMBSTONE = 2;
 
     address public owner;
     IEntryPoint public immutable ENTRY_POINT;
     IWotsCVerifier public immutable VERIFIER;
 
-    // Pre-committed WOTS+C addresses authorized to sign one UserOp each.
     // Value is one of SPARE_NONE / SPARE_ACTIVE / SPARE_TOMBSTONE.
     mapping(address => uint8) public spareKeys;
     uint256 public spareKeyCount;
 
-    uint256 internal constant SIG_VALIDATION_SUCCESS = 0;
-    uint256 internal constant SIG_VALIDATION_FAILED  = 1;
-
-    event WotsAccountInitialized(address indexed owner, address indexed verifier);
-    event Executed(address indexed to, uint256 value, bytes data);
-    event ExecutionFailed(string data);
+    event WotsAccountInitialized(IEntryPoint indexed entryPoint, address indexed owner, address indexed verifier);
     event OwnerRotated(address indexed previousOwner, address indexed newOwner);
     event SpareKeyAdded(address indexed key);
-    event SpareKeyRemoved(address indexed key);         // admin-initiated
+    event SpareKeyRemoved(address indexed key);
     event SpareKeyReplaced(address indexed oldKey, address indexed newKey);
-    event SpareKeyConsumed(address indexed key);        // used by signature
+    event SpareKeyConsumed(address indexed key);
 
     modifier onlyEntryPoint() {
-        require(msg.sender == address(ENTRY_POINT), "WotsAccount: not from EntryPoint");
+        _requireFromEntryPoint();
         _;
     }
 
     constructor(IEntryPoint _entryPoint, IWotsCVerifier _verifier) {
         ENTRY_POINT = _entryPoint;
         VERIFIER = _verifier;
-        // Lock the implementation itself against initialize().
-        // Proxies delegatecall in and have their own (zero) owner slot.
         owner = address(this);
+        _disableInitializers();
     }
 
-    /// @dev Called once by the factory after clone deployment
-    function initialize(address _owner) external {
-        require(owner == address(0), "WotsAccount: already initialized");
+    /// @inheritdoc BaseAccount
+    function entryPoint() public view virtual override returns (IEntryPoint) {
+        return ENTRY_POINT;
+    }
+
+    /// @dev Called once by the factory after clone deployment.
+    function initialize(address _owner) public virtual initializer {
         require(_owner != address(0), "WotsAccount: zero owner");
         owner = _owner;
-        emit WotsAccountInitialized(_owner, address(VERIFIER));
+        emit WotsAccountInitialized(entryPoint(), _owner, address(VERIFIER));
     }
 
-    /// @inheritdoc IAccount
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 missingAccountFunds
-    ) external onlyEntryPoint returns (uint256 validationData) {
+    /// @inheritdoc BaseAccount
+    function _validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash)
+        internal
+        virtual
+        override
+        returns (uint256 validationData)
+    {
         require(userOp.signature.length == WOTS_BLOB_LEN, "WotsAccount: bad sig length");
         require(userOp.callData.length >= 24, "WotsAccount: missing next owner"); // 4 selector + 20 min
 
         address nextOwner = address(bytes20(userOp.callData[userOp.callData.length - 20:]));
-
         address recovered = VERIFIER.wrecover(userOp.signature, userOpHash);
 
         if (recovered == address(0)) {
-            validationData = SIG_VALIDATION_FAILED;
-        } else if (recovered == owner) {
-            _rotateOwner(nextOwner);
-            validationData = SIG_VALIDATION_SUCCESS;
-        } else if (spareKeys[recovered] == SPARE_ACTIVE) {
-            spareKeys[recovered] = SPARE_TOMBSTONE;
-            unchecked { spareKeyCount--; }
-            emit SpareKeyConsumed(recovered);
-            _rotateOwner(nextOwner);
-            validationData = SIG_VALIDATION_SUCCESS;
-        } else {
-            validationData = SIG_VALIDATION_FAILED;
+            return SIG_VALIDATION_FAILED;
         }
 
+        if (recovered == owner) {
+            _rotateOwner(nextOwner);
+            return SIG_VALIDATION_SUCCESS;
+        }
+
+        if (spareKeys[recovered] == SPARE_ACTIVE) {
+            spareKeys[recovered] = SPARE_TOMBSTONE;
+            unchecked {
+                spareKeyCount--;
+            }
+            emit SpareKeyConsumed(recovered);
+            _rotateOwner(nextOwner);
+            return SIG_VALIDATION_SUCCESS;
+        }
+
+        return SIG_VALIDATION_FAILED;
+    }
+
+    function _payPrefund(uint256 missingAccountFunds) internal virtual override {
         if (missingAccountFunds > 0) {
             (bool ok,) = payable(msg.sender).call{value: missingAccountFunds}("");
             require(ok, "WotsAccount: prefund failed");
         }
     }
 
-    function execute(address to, uint256 value, bytes calldata data) external onlyEntryPoint {
-        (bool ok, bytes memory result) = to.call{value: value}(data);
-        if (ok) {
-            emit Executed(to, value, data);
-        } else {
-            emit ExecutionFailed(string(result));
+    function _requireFromEntryPoint() internal view override {
+        require(msg.sender == address(entryPoint()), "WotsAccount: not from EntryPoint");
+    }
+
+    function _requireFromEntryPointOrSelf() internal view {
+        require(
+            msg.sender == address(entryPoint()) || msg.sender == address(this),
+            "WotsAccount: not from EntryPoint or account"
+        );
+    }
+
+    /// @inheritdoc BaseAccount
+    function execute(address target, uint256 value, bytes calldata data) external override {
+        _requireForExecute();
+
+        bool ok = Exec.call(target, value, data, gasleft());
+        if (!ok) {
+            Exec.revertWithReturnData();
         }
     }
 
-    function executeBatch(
-        address[] calldata targets,
-        uint256[] calldata values,
-        bytes[] calldata datas
-    ) external onlyEntryPoint {
-        require(
-            targets.length == values.length && values.length == datas.length,
-            "WotsAccount: length mismatch"
-        );
-        bool ok;
-        bytes memory result;
+    /// @notice Backward-compatible batch ABI kept for existing callers.
+    ///         The upstream BaseAccount batch ABI is executeBatch(Call[]).
+    function executeBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata datas) external {
+        _requireForExecute();
+        require(targets.length == values.length && values.length == datas.length, "WotsAccount: length mismatch");
+
         for (uint256 i = 0; i < targets.length; i++) {
-            (ok, result) = targets[i].call{value: values[i]}(datas[i]);
-            if (!ok) break;
-            emit Executed(targets[i], values[i], datas[i]);
-        }
-        if (!ok) {
-            emit ExecutionFailed(string(result));
+            bool ok = Exec.call(targets[i], values[i], datas[i], gasleft());
+            if (!ok) {
+                if (targets.length == 1) {
+                    Exec.revertWithReturnData();
+                } else {
+                    revert ExecuteError(i, Exec.getReturnData(0));
+                }
+            }
         }
     }
 
@@ -151,6 +150,23 @@ contract SimpleAccount_WOTS is IAccount {
         address previous = owner;
         owner = nextOwner;
         emit OwnerRotated(previous, nextOwner);
+    }
+
+    /// @notice Check this account's deposit in the EntryPoint.
+    function getDeposit() public view virtual returns (uint256) {
+        return entryPoint().balanceOf(address(this));
+    }
+
+    /// @notice Deposit more funds for this account in the EntryPoint.
+    function addDeposit() public payable {
+        _requireFromEntryPointOrSelf();
+        entryPoint().depositTo{value: msg.value}(address(this));
+    }
+
+    /// @notice Withdraw funds from this account's EntryPoint deposit.
+    function withdrawDepositTo(address payable withdrawAddress, uint256 amount) public virtual {
+        _requireFromEntryPointOrSelf();
+        entryPoint().withdrawTo(withdrawAddress, amount);
     }
 
     // =========================================================================
@@ -178,10 +194,14 @@ contract SimpleAccount_WOTS is IAccount {
         }
 
         if (oldKey == address(0)) {
-            unchecked { spareKeyCount++; }
+            unchecked {
+                spareKeyCount++;
+            }
             emit SpareKeyAdded(newKey);
         } else if (newKey == address(0)) {
-            unchecked { spareKeyCount--; }
+            unchecked {
+                spareKeyCount--;
+            }
             emit SpareKeyRemoved(oldKey);
         } else {
             emit SpareKeyReplaced(oldKey, newKey);
