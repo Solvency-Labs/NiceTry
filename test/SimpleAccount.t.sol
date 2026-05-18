@@ -9,6 +9,16 @@ import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {EntryPointLib} from "kernel/sdk/TestBase/erc4337Util.sol";
+
+contract RevertingTarget {
+    error Boom();
+
+    function boom() external pure {
+        revert Boom();
+    }
+}
 
 contract SimpleAccountTest is Test {
     SimpleAccountFactory factory;
@@ -80,7 +90,7 @@ contract SimpleAccountTest is Test {
     }
 
     function test_CannotReinitialize() public {
-        vm.expectRevert("SimpleAccount: already initialized");
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         account.initialize(makeAddr("attacker"));
     }
 
@@ -163,6 +173,19 @@ contract SimpleAccountTest is Test {
         assertEq(ENTRYPOINT.balance, epBalBefore + prefund);
     }
 
+    function test_ValidateUserOpRevertsIfPrefundTransferFails() public {
+        bytes32 userOpHash = keccak256("op-0");
+        bytes memory callData = _buildExecuteCalldata(recipient, 0, "", owner1);
+        bytes memory sig = _sign(ownerPk0, userOpHash);
+        PackedUserOperation memory userOp = _buildUserOp(callData, sig);
+
+        vm.prank(ENTRYPOINT);
+        vm.expectRevert("SimpleAccount: prefund failed");
+        account.validateUserOp(userOp, userOpHash, address(account).balance + 1);
+
+        assertEq(account.owner(), owner0);
+    }
+
     function test_ValidateUserOpEmitsRotation() public {
         bytes32 userOpHash = keccak256("op-0");
         bytes memory callData = _buildExecuteCalldata(recipient, 0, "", owner1);
@@ -185,6 +208,24 @@ contract SimpleAccountTest is Test {
         assertEq(recipient.balance, 1 ether);
     }
 
+    function test_OwnerCannotExecuteDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("SimpleAccount: not from EntryPoint");
+        account.execute(recipient, 0, "");
+    }
+
+    function test_OwnerCannotWithdrawDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("SimpleAccount: not from EntryPoint or account");
+        account.withdrawDepositTo(payable(recipient), 0);
+    }
+
+    function test_OwnerCannotAddDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("SimpleAccount: not from EntryPoint or account");
+        account.addDeposit();
+    }
+
     function test_ExecuteDoesNotRotate() public {
         vm.prank(ENTRYPOINT);
         account.execute(recipient, 0, "");
@@ -195,6 +236,14 @@ contract SimpleAccountTest is Test {
         vm.prank(makeAddr("random"));
         vm.expectRevert("SimpleAccount: not from EntryPoint");
         account.execute(recipient, 0, "");
+    }
+
+    function test_ExecuteBubblesTargetRevert() public {
+        RevertingTarget target = new RevertingTarget();
+
+        vm.prank(ENTRYPOINT);
+        vm.expectRevert(RevertingTarget.Boom.selector);
+        account.execute(address(target), 0, abi.encodeCall(RevertingTarget.boom, ()));
     }
 
     function test_ExecuteBatch() public {
@@ -287,16 +336,12 @@ contract SimpleAccountTest is Test {
     // =========================================================================
 
     /// @dev Build execute calldata with nextOwner appended as last 20 bytes
-    function _buildExecuteCalldata(
-        address to,
-        uint256 value,
-        bytes memory data,
-        address nextOwner
-    ) internal view returns (bytes memory) {
-        return abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, to, value, data),
-            bytes20(nextOwner)
-        );
+    function _buildExecuteCalldata(address to, uint256 value, bytes memory data, address nextOwner)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encodePacked(abi.encodeWithSelector(account.execute.selector, to, value, data), bytes20(nextOwner));
     }
 
     function _sign(uint256 pk, bytes32 userOpHash) internal pure returns (bytes memory) {
@@ -305,10 +350,11 @@ contract SimpleAccountTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    function _buildUserOp(
-        bytes memory callData,
-        bytes memory signature
-    ) internal view returns (PackedUserOperation memory) {
+    function _buildUserOp(bytes memory callData, bytes memory signature)
+        internal
+        view
+        returns (PackedUserOperation memory)
+    {
         return PackedUserOperation({
             sender: address(account),
             nonce: 0,
@@ -331,5 +377,65 @@ contract SimpleAccountTest is Test {
         vm.prank(ENTRYPOINT);
         uint256 validationData = account.validateUserOp(userOp, userOpHash, 0);
         assertEq(validationData, 0);
+    }
+}
+
+contract SimpleAccountEntryPointExecutionTest is Test {
+    IEntryPoint entryPoint;
+    SimpleAccountFactory factory;
+    SimpleAccount_ECDSA account;
+
+    uint256 ownerPk0 = 0xA11CE;
+    address owner0;
+    address owner1;
+
+    function setUp() public {
+        owner0 = vm.addr(ownerPk0);
+        owner1 = vm.addr(0xB0B);
+
+        entryPoint = IEntryPoint(EntryPointLib.deploy());
+        factory = new SimpleAccountFactory(entryPoint, IWotsCVerifier(address(0)), IForsVerifier(address(0)));
+
+        address accountAddr = factory.createAccount(owner0, 0, 0);
+        account = SimpleAccount_ECDSA(payable(accountAddr));
+        vm.deal(accountAddr, 10 ether);
+    }
+
+    function test_HandleOpsExecutionRevertStillRotatesOwner() public {
+        RevertingTarget target = new RevertingTarget();
+        bytes memory callData = abi.encodePacked(
+            abi.encodeWithSelector(
+                account.execute.selector, address(target), uint256(0), abi.encodeCall(RevertingTarget.boom, ())
+            ),
+            bytes20(owner1)
+        );
+
+        PackedUserOperation memory op = PackedUserOperation({
+            sender: address(account),
+            nonce: 0,
+            initCode: "",
+            callData: callData,
+            accountGasLimits: bytes32(abi.encodePacked(uint128(1_000_000), uint128(1_000_000))),
+            preVerificationGas: 100_000,
+            gasFees: bytes32(abi.encodePacked(uint128(1), uint128(1))),
+            paymasterAndData: "",
+            signature: ""
+        });
+
+        bytes32 userOpHash = entryPoint.getUserOpHash(op);
+        op.signature = _sign(ownerPk0, userOpHash);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = op;
+
+        entryPoint.handleOps(ops, payable(makeAddr("beneficiary")));
+
+        assertEq(account.owner(), owner1);
+    }
+
+    function _sign(uint256 pk, bytes32 userOpHash) internal pure returns (bytes memory) {
+        bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(userOpHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, ethHash);
+        return abi.encodePacked(r, s, v);
     }
 }
