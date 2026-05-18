@@ -3,7 +3,7 @@
 Reference Solidity implementation of the NiceTry ephemeral-key smart wallet design.
 
 > [!NOTE]
-> This repo contains contracts only. For the protocol specification see [NiceTry-Spec](https://github.com/RivaLabs-Core/ephemeral-keys). For a project overview, see [docs.nicetry.xyz](https://docs.nicetry.xyz/).
+> This repo contains contracts only. For the protocol specification see [Ephemeral-Keys-Protocol](https://github.com/RivaLabs-Core/ephemeral-keys).
 
 ## What this repo contains
 
