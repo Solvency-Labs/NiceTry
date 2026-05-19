@@ -2,11 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "../src/SimpleAccounts/SimpleAccount_WOTS.sol";
-import "../src/SimpleAccountFactory.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
-import {WOTS_BLOB_LEN} from "../src/Verifiers/WotsCVerifier.sol";
+import "../../../other-implementations/wots/SimpleAccount_WOTS.sol";
+import {LegacySimpleAccountFactory} from "../../../other-implementations/LegacySimpleAccountFactory.sol";
+import {IWotsCVerifier} from "../../../other-implementations/wots/IWotsCVerifier.sol";
+import {WOTS_BLOB_LEN} from "../../../other-implementations/wots/WotsCVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
@@ -26,7 +25,7 @@ contract MockWotsVerifier is IWotsCVerifier {
 }
 
 contract SimpleAccountWotsTest is Test {
-    SimpleAccountFactory factory;
+    LegacySimpleAccountFactory factory;
     SimpleAccount_WOTS account;
     MockWotsVerifier verifier;
     IEntryPoint entryPoint;
@@ -48,7 +47,7 @@ contract SimpleAccountWotsTest is Test {
         vm.etch(ENTRYPOINT, hex"00");
 
         verifier = new MockWotsVerifier();
-        factory = new SimpleAccountFactory(entryPoint, verifier, IForsVerifier(address(0)));
+        factory = new LegacySimpleAccountFactory(entryPoint, verifier);
 
         address accountAddr = factory.createAccount(owner0, 0, 1);
         account = SimpleAccount_WOTS(payable(accountAddr));
