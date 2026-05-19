@@ -5,8 +5,8 @@ signer in the NiceTry account abstraction stack: how the scheme works, what
 hash operations it performs, what its security looks like, and why we landed
 on the parameters we did.
 
-It is intended to be read alongside `src/ForsVerifier.sol` and
-`src/SimpleAccount_FORS.sol`.
+It is intended to be read alongside `src/Verifiers/ForsVerifier.sol` and
+`src/SimpleAccount.sol`.
 
 ---
 
@@ -306,13 +306,13 @@ becomes the binding constraint and you can accept q=1 = 120 bits (below
 Level 1).
 
 To revisit, change `FORS_K` and `FORS_A` at the top of
-`src/ForsVerifier.sol`. All other parameter-derived values (loop bounds,
+`src/Verifiers/ForsVerifier.sol`. All other parameter-derived values (loop bounds,
 bit masks, shift counts, signature length, roots-hash length) are
 computed from those two constants and hoisted into stack locals at the
 top of `recover()`, so no assembly literal needs to be touched in
 lockstep. Update the parameter-summary block at the top of the file and
 the relevant numbers in this doc to keep documentation in sync, and run
-the FORS account tests (`test/SimpleAccount_FORS.t.sol`) — the new
+the account tests (`test/SimpleAccount.t.sol`) — the new
 `FORS_SIG_LEN` flows through automatically and the mock-based suite
 exercises the length check.
 
@@ -402,10 +402,10 @@ ever becomes the binding constraint.
 
 One-time signature (OTS), not few-time: any reuse breaks immediately.
 Smaller signature than FORS at comparable security (~750 B vs 1,984 B for
-FORS+C). We deploy both as parallel primary signers in
-`SimpleAccountFactory` (modes `1` and `2`). FORS as deployed here is the
-"safer-on-reuse" alternative to WOTS+C, paying ~3× the bytes for graceful
-degradation.
+FORS+C). WOTS+C is now retained under `other-implementations/` as a legacy
+comparison path. The main `SimpleAccountFactory` deploys the FORS-backed
+`SimpleAccount`; FORS is the safer-on-reuse alternative to WOTS+C, paying
+~3x the bytes for graceful degradation.
 
 ---
 

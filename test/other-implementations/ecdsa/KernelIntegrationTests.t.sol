@@ -16,7 +16,7 @@ import {ExecLib} from "kernel/utils/ExecLib.sol";
 import {ExecMode} from "kernel/types/Types.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {KernelRotatingECDSAValidator} from "../src/Modules/KernelRotatingECDSAValidator.sol";
+import {KernelRotatingECDSAValidator} from "../../../other-implementations/ecdsa/KernelRotatingECDSAValidator.sol";
 
 /// @dev Step 2a: install-only integration test.
 ///
@@ -56,16 +56,10 @@ contract KernelIntegrationTest is Test {
         //   validatorData = abi.encode(owner) — consumed by our onInstall's abi.decode
         //   hookData      = empty
         //   initConfig    = empty (no extra module installs)
-        ValidationId rootValidator =
-            ValidatorLib.validatorToIdentifier(IValidator(address(validator)));
+        ValidationId rootValidator = ValidatorLib.validatorToIdentifier(IValidator(address(validator)));
 
         bytes memory initData = abi.encodeWithSelector(
-            Kernel.initialize.selector,
-            rootValidator,
-            IHook(address(0)),
-            abi.encode(owner),
-            bytes(""),
-            new bytes[](0)
+            Kernel.initialize.selector, rootValidator, IHook(address(0)), abi.encode(owner), bytes(""), new bytes[](0)
         );
 
         // Deploy the Kernel account through its factory.
@@ -92,9 +86,7 @@ contract KernelIntegrationTest is Test {
     function test_install_rootValidatorMatchesOurs() public view {
         // Kernel's rootValidator() returns the ValidationId. Extract the low 20 bytes.
         ValidationId rv = account.rootValidator();
-        address installed = ValidationId.unwrap(rv) == bytes21(0)
-            ? address(0)
-            : address(ValidatorLib.getValidator(rv));
+        address installed = ValidationId.unwrap(rv) == bytes21(0) ? address(0) : address(ValidatorLib.getValidator(rv));
         assertEq(installed, address(validator));
     }
 
@@ -153,18 +145,16 @@ contract KernelIntegrationTest is Test {
 
     /// @dev Build a userOp with `execute(single-call)` callData and nextOwner
     ///      appended as the last 20 bytes. Signature left empty.
-    function _buildUserOp(
-        address target,
-        uint256 value,
-        bytes memory callData,
-        address nextOwner
-    ) internal view returns (PackedUserOperation memory) {
+    function _buildUserOp(address target, uint256 value, bytes memory callData, address nextOwner)
+        internal
+        view
+        returns (PackedUserOperation memory)
+    {
         ExecMode execMode = ExecLib.encodeSimpleSingle();
         bytes memory executionCalldata = ExecLib.encodeSingle(target, value, callData);
 
         bytes memory fullCallData = abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, execMode, executionCalldata),
-            bytes20(nextOwner)
+            abi.encodeWithSelector(account.execute.selector, execMode, executionCalldata), bytes20(nextOwner)
         );
 
         return PackedUserOperation({

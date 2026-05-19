@@ -2,10 +2,9 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "../src/SimpleAccounts/SimpleAccount_WOTS.sol";
-import "../src/SimpleAccountFactory.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
+import "../../../other-implementations/wots/SimpleAccount_WOTS.sol";
+import {LegacySimpleAccountFactory} from "../../../other-implementations/LegacySimpleAccountFactory.sol";
+import {IWotsCVerifier} from "../../../other-implementations/wots/IWotsCVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 
@@ -24,7 +23,7 @@ import {
     WOTS_CTR_OFFSET,
     WOTS_SEED_OFFSET,
     WOTS_DIGIT_SHIFT_0
-} from "../src/Verifiers/WotsCVerifier.sol";
+} from "../../../other-implementations/wots/WotsCVerifier.sol";
 
 /// @dev Test-only WOTS+C key derivation and signer. Replicates the on-chain
 ///      WotsCVerifier algorithm using the same parameter set, imported from
@@ -41,10 +40,10 @@ library WotsSigner {
     uint32 constant MAX_CTR = 1_000_000;
 
     struct Key {
-        bytes16[WOTS_L] sk;    // private chain starts
-        bytes16         seed;  // public chain salt
-        bytes16[WOTS_L] pk;    // public chain ends (pos W_MAX)
-        address         addr;  // low 20 bytes of keccak256(pk[0]||..||pk[L-1])
+        bytes16[WOTS_L] sk; // private chain starts
+        bytes16 seed; // public chain salt
+        bytes16[WOTS_L] pk; // public chain ends (pos W_MAX)
+        address addr; // low 20 bytes of keccak256(pk[0]||..||pk[L-1])
     }
 
     /// @dev SPHINCS+ FIPS 205 ADRS for WOTS_HASH (type=0): 32 bytes, with
@@ -63,19 +62,17 @@ library WotsSigner {
 
     /// @dev One chain hash step. Matches WotsCVerifier inline assembly bit-for-bit:
     ///      keccak256(pkSeed(N) || ADRS(32) || cur(N)) truncated to N bytes.
-    function chainStep(bytes16 seed, uint32 i, uint32 s, bytes16 cur)
-        internal pure returns (bytes16)
-    {
+    function chainStep(bytes16 seed, uint32 i, uint32 s, bytes16 cur) internal pure returns (bytes16) {
         return bytes16(keccak256(abi.encodePacked(seed, _adrsHash(i, s), cur)));
     }
 
     /// @dev T_l: compress L pubkey endpoints into a 16-byte root.
     ///      keccak(pkSeed(N) || ADRS_PK(32) || pk_0(N) || … || pk_{L-1}(N))
-    function _compressPk(bytes16 seed, bytes16[WOTS_L] memory pk)
-        private pure returns (bytes16)
-    {
+    function _compressPk(bytes16 seed, bytes16[WOTS_L] memory pk) private pure returns (bytes16) {
         bytes memory buf = new bytes(WOTS_N + 32 + WOTS_L * WOTS_N);
-        for (uint256 b = 0; b < WOTS_N; b++) buf[b] = seed[b];
+        for (uint256 b = 0; b < WOTS_N; b++) {
+            buf[b] = seed[b];
+        }
         // ADRS_PK is mostly zero; bytes 16..47 of buf are the ADRS, with
         // type=1 living at ADRS byte 19 (= buf byte 35).
         buf[WOTS_N + 19] = bytes1(0x01);
@@ -125,9 +122,7 @@ library WotsSigner {
 
     /// @dev Produce a BLOB_LEN-byte blob that verifies against `k.addr` for `digest`.
     ///      Searches `ctr` until the digit checksum of keccak256(r || ctr || digest) == TARGET_SUM.
-    function sign(Key memory k, bytes32 digest, bytes32 r)
-        internal pure returns (bytes memory blob)
-    {
+    function sign(Key memory k, bytes32 digest, bytes32 r) internal pure returns (bytes memory blob) {
         uint32 ctr;
         bytes32 h;
         bool found;
@@ -163,7 +158,7 @@ library WotsSigner {
             blob[WOTS_R_OFFSET + b] = r[b];
         }
         // ctr at CTR_OFFSET (4 bytes, big-endian)
-        blob[WOTS_CTR_OFFSET    ] = bytes1(uint8(ctr >> 24));
+        blob[WOTS_CTR_OFFSET] = bytes1(uint8(ctr >> 24));
         blob[WOTS_CTR_OFFSET + 1] = bytes1(uint8(ctr >> 16));
         blob[WOTS_CTR_OFFSET + 2] = bytes1(uint8(ctr >> 8));
         blob[WOTS_CTR_OFFSET + 3] = bytes1(uint8(ctr));
@@ -256,11 +251,11 @@ contract WotsCVerifierTest is Test {
     // =========================================================================
 
     function test_params_matchFileLevelConstants() public view {
-        assertEq(verifier.W_BITS(),     WOTS_W_BITS);
-        assertEq(verifier.N(),          WOTS_N);
-        assertEq(verifier.L(),          WOTS_L);
+        assertEq(verifier.W_BITS(), WOTS_W_BITS);
+        assertEq(verifier.N(), WOTS_N);
+        assertEq(verifier.L(), WOTS_L);
         assertEq(verifier.TARGET_SUM(), WOTS_TARGET_SUM);
-        assertEq(verifier.BLOB_LEN(),   WOTS_BLOB_LEN);
+        assertEq(verifier.BLOB_LEN(), WOTS_BLOB_LEN);
     }
 
     // =========================================================================
@@ -311,11 +306,8 @@ contract WotsCVerifierTest is Test {
         address ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
         vm.etch(ENTRYPOINT, hex"00");
 
-        SimpleAccountFactory factory = new SimpleAccountFactory(
-            IEntryPoint(ENTRYPOINT),
-            IWotsCVerifier(address(verifier)),
-            IForsVerifier(address(0))
-        );
+        LegacySimpleAccountFactory factory =
+            new LegacySimpleAccountFactory(IEntryPoint(ENTRYPOINT), IWotsCVerifier(address(verifier)));
         address accountAddr = factory.createAccount(k.addr, 0, 1);
         SimpleAccount_WOTS account = SimpleAccount_WOTS(payable(accountAddr));
 
@@ -356,11 +348,8 @@ contract WotsCVerifierTest is Test {
         vm.etch(ENTRYPOINT, hex"00");
 
         // Deploy a real factory + account owned by our WOTS-derived address.
-        SimpleAccountFactory factory = new SimpleAccountFactory(
-            IEntryPoint(ENTRYPOINT),
-            IWotsCVerifier(address(verifier)),
-            IForsVerifier(address(0))
-        );
+        LegacySimpleAccountFactory factory =
+            new LegacySimpleAccountFactory(IEntryPoint(ENTRYPOINT), IWotsCVerifier(address(verifier)));
         address accountAddr = factory.createAccount(k.addr, 0, 1);
         SimpleAccount_WOTS account = SimpleAccount_WOTS(payable(accountAddr));
 
@@ -369,8 +358,7 @@ contract WotsCVerifierTest is Test {
 
         // callData = execute(recipient, 0, "") || bytes20(nextOwner)
         bytes memory callData = abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, recipient, uint256(0), bytes("")),
-            bytes20(nextOwner)
+            abi.encodeWithSelector(account.execute.selector, recipient, uint256(0), bytes("")), bytes20(nextOwner)
         );
 
         bytes32 userOpHash = keccak256("real-op");
@@ -391,19 +379,16 @@ contract WotsCVerifierTest is Test {
         vm.prank(ENTRYPOINT);
         uint256 validationData = account.validateUserOp(userOp, userOpHash, 0);
 
-        assertEq(validationData, 0);                 // signature accepted
-        assertEq(account.owner(), nextOwner);        // rotation happened
+        assertEq(validationData, 0); // signature accepted
+        assertEq(account.owner(), nextOwner); // rotation happened
     }
 
     function test_endToEnd_wrongKeyRejected() public {
         address ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
         vm.etch(ENTRYPOINT, hex"00");
 
-        SimpleAccountFactory factory = new SimpleAccountFactory(
-            IEntryPoint(ENTRYPOINT),
-            IWotsCVerifier(address(verifier)),
-            IForsVerifier(address(0))
-        );
+        LegacySimpleAccountFactory factory =
+            new LegacySimpleAccountFactory(IEntryPoint(ENTRYPOINT), IWotsCVerifier(address(verifier)));
         address accountAddr = factory.createAccount(k.addr, 0, 1);
         SimpleAccount_WOTS account = SimpleAccount_WOTS(payable(accountAddr));
 
@@ -432,8 +417,8 @@ contract WotsCVerifierTest is Test {
         vm.prank(ENTRYPOINT);
         uint256 validationData = account.validateUserOp(userOp, userOpHash, 0);
 
-        assertEq(validationData, 1);            // rejected
-        assertEq(account.owner(), k.addr);      // no rotation
+        assertEq(validationData, 1); // rejected
+        assertEq(account.owner(), k.addr); // no rotation
     }
 
     /// @dev Spare key signs an arbitrary execute userOp. Main rotates to
@@ -442,11 +427,8 @@ contract WotsCVerifierTest is Test {
         address ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
         vm.etch(ENTRYPOINT, hex"00");
 
-        SimpleAccountFactory factory = new SimpleAccountFactory(
-            IEntryPoint(ENTRYPOINT),
-            IWotsCVerifier(address(verifier)),
-            IForsVerifier(address(0))
-        );
+        LegacySimpleAccountFactory factory =
+            new LegacySimpleAccountFactory(IEntryPoint(ENTRYPOINT), IWotsCVerifier(address(verifier)));
         address accountAddr = factory.createAccount(k.addr, 0, 1);
         SimpleAccount_WOTS account = SimpleAccount_WOTS(payable(accountAddr));
 
@@ -490,11 +472,8 @@ contract WotsCVerifierTest is Test {
         address ENTRYPOINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
         vm.etch(ENTRYPOINT, hex"00");
 
-        SimpleAccountFactory factory = new SimpleAccountFactory(
-            IEntryPoint(ENTRYPOINT),
-            IWotsCVerifier(address(verifier)),
-            IForsVerifier(address(0))
-        );
+        LegacySimpleAccountFactory factory =
+            new LegacySimpleAccountFactory(IEntryPoint(ENTRYPOINT), IWotsCVerifier(address(verifier)));
         address accountAddr = factory.createAccount(k.addr, 0, 1);
         SimpleAccount_WOTS account = SimpleAccount_WOTS(payable(accountAddr));
 
@@ -539,8 +518,7 @@ contract WotsCVerifierTest is Test {
         address ep
     ) internal {
         bytes memory callData = abi.encodePacked(
-            abi.encodeWithSelector(acc.execute.selector, makeAddr("t1"), uint256(0), bytes("")),
-            bytes20(newMain)
+            abi.encodeWithSelector(acc.execute.selector, makeAddr("t1"), uint256(0), bytes("")), bytes20(newMain)
         );
         bytes memory sig = WotsSigner.sign(spare, userOpHash, r);
         PackedUserOperation memory op = PackedUserOperation({

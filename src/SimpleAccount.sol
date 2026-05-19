@@ -8,23 +8,23 @@ import {TokenCallbackHandler} from "account-abstraction/accounts/callback/TokenC
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {IForsVerifier} from "../Interfaces/IForsVerifier.sol";
-import {FORS_SIG_LEN} from "../Verifiers/ForsVerifier.sol";
+import {ISignatureVerifier} from "./Interfaces/ISignatureVerifier.sol";
+import {FORS_SIG_LEN} from "./Verifiers/ForsVerifier.sol";
 
-/// @title SimpleAccount_FORS
+/// @title SimpleAccount
 /// @notice ERC-4337 smart account using standalone FORS as the primary signer.
 ///
 ///         userOp.signature = [FORS_SIG_LEN bytes FORS blob]
 ///         userOp.callData  = [... any call ...][20 bytes nextOwner]
-contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable {
+contract SimpleAccount is BaseAccount, TokenCallbackHandler, Initializable {
     address public owner;
     IEntryPoint public immutable ENTRY_POINT;
-    IForsVerifier public immutable VERIFIER;
+    ISignatureVerifier public immutable VERIFIER;
 
-    event ForsAccountInitialized(IEntryPoint indexed entryPoint, address indexed owner, address indexed verifier);
+    event AccountInitialized(IEntryPoint indexed entryPoint, address indexed owner, address indexed verifier);
     event OwnerRotated(address indexed previousOwner, address indexed newOwner);
 
-    constructor(IEntryPoint _entryPoint, IForsVerifier _verifier) {
+    constructor(IEntryPoint _entryPoint, ISignatureVerifier _verifier) {
         ENTRY_POINT = _entryPoint;
         VERIFIER = _verifier;
         owner = address(this);
@@ -38,9 +38,9 @@ contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable 
 
     /// @dev Called once by the factory after clone deployment.
     function initialize(address _owner) public virtual initializer {
-        require(_owner != address(0), "ForsAccount: zero owner");
+        require(_owner != address(0), "SimpleAccount: zero owner");
         owner = _owner;
-        emit ForsAccountInitialized(entryPoint(), _owner, address(VERIFIER));
+        emit AccountInitialized(entryPoint(), _owner, address(VERIFIER));
     }
 
     /// @inheritdoc BaseAccount
@@ -50,7 +50,7 @@ contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable 
         override
         returns (uint256 validationData)
     {
-        require(userOp.callData.length >= 24, "ForsAccount: missing next owner"); // 4 selector + 20
+        require(userOp.callData.length >= 24, "SimpleAccount: missing next owner"); // 4 selector + 20
 
         if (userOp.signature.length != FORS_SIG_LEN) {
             return SIG_VALIDATION_FAILED;
@@ -70,18 +70,18 @@ contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable 
     function _payPrefund(uint256 missingAccountFunds) internal virtual override {
         if (missingAccountFunds > 0) {
             (bool ok,) = payable(msg.sender).call{value: missingAccountFunds}("");
-            require(ok, "ForsAccount: prefund failed");
+            require(ok, "SimpleAccount: prefund failed");
         }
     }
 
     function _requireFromEntryPoint() internal view override {
-        require(msg.sender == address(entryPoint()), "ForsAccount: not from EntryPoint");
+        require(msg.sender == address(entryPoint()), "SimpleAccount: not from EntryPoint");
     }
 
     function _requireFromEntryPointOrSelf() internal view {
         require(
             msg.sender == address(entryPoint()) || msg.sender == address(this),
-            "ForsAccount: not from EntryPoint or account"
+            "SimpleAccount: not from EntryPoint or account"
         );
     }
 
@@ -99,7 +99,7 @@ contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable 
     ///         The upstream BaseAccount batch ABI is executeBatch(Call[]).
     function executeBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata datas) external {
         _requireForExecute();
-        require(targets.length == values.length && values.length == datas.length, "ForsAccount: length mismatch");
+        require(targets.length == values.length && values.length == datas.length, "SimpleAccount: length mismatch");
 
         for (uint256 i = 0; i < targets.length; i++) {
             bool ok = Exec.call(targets[i], values[i], datas[i], gasleft());
@@ -114,7 +114,7 @@ contract SimpleAccount_FORS is BaseAccount, TokenCallbackHandler, Initializable 
     }
 
     function _rotateOwner(address nextOwner) internal {
-        require(nextOwner != address(0), "ForsAccount: zero next owner");
+        require(nextOwner != address(0), "SimpleAccount: zero next owner");
         address previous = owner;
         owner = nextOwner;
         emit OwnerRotated(previous, nextOwner);

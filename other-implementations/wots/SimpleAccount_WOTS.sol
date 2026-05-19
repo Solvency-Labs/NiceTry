@@ -8,8 +8,8 @@ import {TokenCallbackHandler} from "account-abstraction/accounts/callback/TokenC
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {IWotsCVerifier} from "../Interfaces/IWotsCVerifier.sol";
-import {WOTS_BLOB_LEN} from "../Verifiers/WotsCVerifier.sol";
+import {IWotsCVerifier} from "./IWotsCVerifier.sol";
+import {WOTS_BLOB_LEN} from "./WotsCVerifier.sol";
 
 /// @title SimpleAccount_WOTS
 /// @notice ERC-4337 smart account with WOTS+C post-quantum signatures,
