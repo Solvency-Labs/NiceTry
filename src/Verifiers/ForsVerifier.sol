@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IForsVerifier} from "../Interfaces/IForsVerifier.sol";
+import {ISignatureVerifier} from "../Interfaces/ISignatureVerifier.sol";
 
 /*
  * Standalone FORS+C signature verifier (Keccak variant).
@@ -63,9 +63,9 @@ import {IForsVerifier} from "../Interfaces/IForsVerifier.sol";
 
 // --- Primary parameters ---
 
-uint256 constant FORS_N = 16;     // hash truncation / node size
-uint256 constant FORS_K = 26;     // FORS trees (paper-style; only K-1 are real under +C)
-uint256 constant FORS_A = 5;      // FORS tree height; auth climb is unrolled below
+uint256 constant FORS_N = 16; // hash truncation / node size
+uint256 constant FORS_K = 26; // FORS trees (paper-style; only K-1 are real under +C)
+uint256 constant FORS_A = 5; // FORS tree height; auth climb is unrolled below
 
 // --- Derived: signature layout ---
 //
@@ -78,16 +78,15 @@ uint256 constant FORS_A = 5;      // FORS tree height; auth climb is unrolled be
 // The K-th tree's auth path is omitted entirely; the verifier knows
 // mdT[K-1] = 0 from the grinding constraint and never opens that tree.
 
-uint256 constant FORS_R_LEN         = 16;
-uint256 constant FORS_PKSEED_LEN    = 16;
-uint256 constant FORS_TREE_LEN      = 16 + FORS_A * 16;            // 96
-uint256 constant FORS_SECTION_LEN   = (FORS_K - 1) * FORS_TREE_LEN;// 2,400
-uint256 constant FORS_COUNTER_LEN   = 16;
-uint256 constant FORS_SIG_LEN       =
-    FORS_R_LEN + FORS_PKSEED_LEN + FORS_SECTION_LEN + FORS_COUNTER_LEN; // 2,448
+uint256 constant FORS_R_LEN = 16;
+uint256 constant FORS_PKSEED_LEN = 16;
+uint256 constant FORS_TREE_LEN = 16 + FORS_A * 16; // 96
+uint256 constant FORS_SECTION_LEN = (FORS_K - 1) * FORS_TREE_LEN; // 2,400
+uint256 constant FORS_COUNTER_LEN = 16;
+uint256 constant FORS_SIG_LEN = FORS_R_LEN + FORS_PKSEED_LEN + FORS_SECTION_LEN + FORS_COUNTER_LEN; // 2,448
 
-uint256 constant FORS_R_OFFSET       = 0;
-uint256 constant FORS_PKSEED_OFFSET  = FORS_R_OFFSET + FORS_R_LEN;     // 16
+uint256 constant FORS_R_OFFSET = 0;
+uint256 constant FORS_PKSEED_OFFSET = FORS_R_OFFSET + FORS_R_LEN; // 16
 uint256 constant FORS_SECTION_OFFSET = FORS_PKSEED_OFFSET + FORS_PKSEED_LEN; // 32
 uint256 constant FORS_COUNTER_OFFSET = FORS_SECTION_OFFSET + FORS_SECTION_LEN; // 2,432
 uint256 constant FORS_ROOTS_HASH_LEN = (FORS_K + 1) * 32; // 864
@@ -97,8 +96,7 @@ uint256 constant FORS_SCRATCH_OFFSET = 0x380;
 // A=5 is unrolled, and scratch memory must sit after the roots hash input.
 uint256 constant FORS_A_UNROLL_GUARD = 1 / (FORS_A == 5 ? 1 : 0);
 uint256 constant FORS_SCRATCH_ALIGN_GUARD = 1 / (FORS_SCRATCH_OFFSET % 64 == 0 ? 1 : 0);
-uint256 constant FORS_SCRATCH_OVERLAP_GUARD =
-    1 / (FORS_SCRATCH_OFFSET >= FORS_ROOTS_HASH_LEN ? 1 : 0);
+uint256 constant FORS_SCRATCH_OVERLAP_GUARD = 1 / (FORS_SCRATCH_OFFSET >= FORS_ROOTS_HASH_LEN ? 1 : 0);
 
 // --- Derived: bit ops ---
 
@@ -109,41 +107,37 @@ uint256 constant FORS_DOM = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 
 // --- ADRS types (matches SPHINCS+ family) ---
 
-uint256 constant FORS_TYPE_FORS_TREE  = 3;
+uint256 constant FORS_TYPE_FORS_TREE = 3;
 uint256 constant FORS_TYPE_FORS_ROOTS = 4;
 
 /// @title ForsVerifier
 /// @notice Standalone FORS+C verifier (Keccak primitive).
-contract ForsVerifier is IForsVerifier {
-
+contract ForsVerifier is ISignatureVerifier {
     // --- Public parameters (ABI-readable) ---
 
-    uint256 public constant N        = FORS_N;
-    uint256 public constant K        = FORS_K;
-    uint256 public constant A        = FORS_A;
-    uint256 public constant SIG_LEN  = FORS_SIG_LEN;
+    uint256 public constant N = FORS_N;
+    uint256 public constant K = FORS_K;
+    uint256 public constant A = FORS_A;
+    uint256 public constant SIG_LEN = FORS_SIG_LEN;
 
-    /// @inheritdoc IForsVerifier
-    function recover(
-        bytes calldata sig,
-        bytes32 digest
-    ) external pure override returns (address) {
+    /// @inheritdoc ISignatureVerifier
+    function recover(bytes calldata sig, bytes32 digest) external pure override returns (address) {
         // Hoist computed constants into locals — Solidity inline assembly
         // only accepts numeric literals or value-typed locals as operands.
         // The Merkle climb below is intentionally unrolled for A=5; changing
         // FORS_A requires updating that block, not only these locals.
-        uint256 SIG_LEN_       = FORS_SIG_LEN;
-        uint256 N_MASK         = FORS_TOP_N_MASK;
-        uint256 DOM            = FORS_DOM;
-        uint256 SECTION_OFF    = FORS_SECTION_OFFSET;
-        uint256 COUNTER_OFF    = FORS_COUNTER_OFFSET;
-        uint256 TREE_LEN_      = FORS_TREE_LEN;             // 16 + A·16
-        uint256 ROOTS_HASH_LEN = FORS_ROOTS_HASH_LEN;       // pkSeed + ADRS + (K-1)·N
+        uint256 SIG_LEN_ = FORS_SIG_LEN;
+        uint256 N_MASK = FORS_TOP_N_MASK;
+        uint256 DOM = FORS_DOM;
+        uint256 SECTION_OFF = FORS_SECTION_OFFSET;
+        uint256 COUNTER_OFF = FORS_COUNTER_OFFSET;
+        uint256 TREE_LEN_ = FORS_TREE_LEN; // 16 + A·16
+        uint256 ROOTS_HASH_LEN = FORS_ROOTS_HASH_LEN; // pkSeed + ADRS + (K-1)·N
 
         // Parameter-derived loop bounds and bit masks:
-        uint256 KMINUS1   = FORS_K - 1;                      // outer tree-open loop bound
-        uint256 MD_MASK   = (uint256(1) << FORS_A) - 1;      // mdT mask = (1<<A) - 1
-        uint256 KMINUS1_A = (FORS_K - 1) * FORS_A;           // bit offset of the K-th mdT field in dVal
+        uint256 KMINUS1 = FORS_K - 1; // outer tree-open loop bound
+        uint256 MD_MASK = (uint256(1) << FORS_A) - 1; // mdT mask = (1<<A) - 1
+        uint256 KMINUS1_A = (FORS_K - 1) * FORS_A; // bit offset of the K-th mdT field in dVal
 
         if (sig.length != SIG_LEN_) return address(0);
 
@@ -152,8 +146,8 @@ contract ForsVerifier is IForsVerifier {
 
             // R, pkSeed, counter: each is 16 B kept in the top half of a
             // 32-byte word, with the next 16 B masked off.
-            let R       := and(calldataload(sigBase),                 N_MASK)
-            let pkSeed  := and(calldataload(add(sigBase, 16)),        N_MASK)
+            let R := and(calldataload(sigBase), N_MASK)
+            let pkSeed := and(calldataload(add(sigBase, 16)), N_MASK)
             let counter := and(calldataload(add(sigBase, COUNTER_OFF)), N_MASK)
 
             // ─── Hmsg = keccak(pkSeed ‖ R ‖ digest ‖ dom_FORS ‖ counter) = 160 B ───
@@ -268,8 +262,7 @@ contract ForsVerifier is IForsVerifier {
             // ─── Address = keccak256(pad32(pkSeed) || pad32(pkRoot))[12:32] ───
             // pkSeed is still at 0x00 from the Hmsg setup — no rewrite needed.
             mstore(0x20, pkRoot)
-            let signer := and(keccak256(0x00, 0x40),
-                0x000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+            let signer := and(keccak256(0x00, 0x40), 0x000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
 
             mstore(0x00, signer)
             return(0x00, 0x20)
