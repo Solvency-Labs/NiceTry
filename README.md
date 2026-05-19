@@ -72,10 +72,6 @@ Level 1), q=2 = 104, q=5 = 70. Signer hashes per signature: ~2.4k
 (interactive on hardware wallets). Tree cache per keypair: ~25 KB
 (K-1 = 25 trees x 63 nodes x 16 B).
 
-**WOTS+C** (`other-implementations/wots/WotsCVerifier.sol`): W=32
-(5-bit Winternitz), L=26 chains, N=16, target sum = L*(W-1)/2 = 403.
-Signature 468 bytes. It is retained as a legacy comparison implementation.
-
 To retune FORS+C, edit the primary parameters at the top of
 `src/Verifiers/ForsVerifier.sol`. All derived constants (signature layout,
 hash inputs, loop bounds, masks) recompute automatically.
