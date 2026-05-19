@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {IKernelValidator} from "./IKernelValidator.sol";
+import {IKernelValidator} from "../kernel/IKernelValidator.sol";
 
 /// @title KernelRotatingECDSAValidator
 /// @notice ZeroDev Kernel v3.1-compatible ECDSA validator with automatic one-time-use

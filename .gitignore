@@ -1,6 +1,8 @@
 # Compiler files
 cache/
 out/
+__pycache__/
+*.py[cod]
 
 # Local research / agent cache
 .codex-cache/
@@ -15,6 +17,8 @@ broadcast/
 docs/*
 !docs/fors-parameters.md
 !docs/fors-two-forest-cache.md
+!docs/fors-frame-account-plan.md
+!docs/signing-spec.md
 
 # Dotenv file
 .env
@@ -24,3 +28,6 @@ lib/*
 node_modules/
 deployCommands.txt
 abi/
+
+# Lean/Lake local dependency and build cache
+verity/.lake/

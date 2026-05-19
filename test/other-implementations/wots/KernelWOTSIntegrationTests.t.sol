@@ -16,9 +16,9 @@ import {ExecLib} from "kernel/utils/ExecLib.sol";
 import {ExecMode} from "kernel/types/Types.sol";
 
 // Our pieces
-import {WotsCVerifier} from "../src/Verifiers/WotsCVerifier.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {KernelRotatingWOTSValidator} from "../src/Modules/KernelRotatingWOTSValidator.sol";
+import {WotsCVerifier} from "../../../other-implementations/wots/WotsCVerifier.sol";
+import {IWotsCVerifier} from "../../../other-implementations/wots/IWotsCVerifier.sol";
+import {KernelRotatingWOTSValidator} from "../../../other-implementations/wots/KernelRotatingWOTSValidator.sol";
 
 // Test-only signer from the existing WOTS verifier suite.
 import {WotsSigner} from "./WotsCVerifier.t.sol";
@@ -49,8 +49,7 @@ contract KernelWOTSIntegrationTest is Test {
         // Derive a real WOTS+C key; its address is the initial owner.
         signerKey = WotsSigner.derive(bytes32(uint256(0xC0FFEE)));
 
-        ValidationId rootValidator =
-            ValidatorLib.validatorToIdentifier(IValidator(address(validator)));
+        ValidationId rootValidator = ValidatorLib.validatorToIdentifier(IValidator(address(validator)));
 
         bytes memory initData = abi.encodeWithSelector(
             Kernel.initialize.selector,
@@ -107,18 +106,16 @@ contract KernelWOTSIntegrationTest is Test {
 
     // --- helpers ---
 
-    function _buildUserOp(
-        address target,
-        uint256 value,
-        bytes memory callData,
-        address nextOwner
-    ) internal view returns (PackedUserOperation memory) {
+    function _buildUserOp(address target, uint256 value, bytes memory callData, address nextOwner)
+        internal
+        view
+        returns (PackedUserOperation memory)
+    {
         ExecMode execMode = ExecLib.encodeSimpleSingle();
         bytes memory executionCalldata = ExecLib.encodeSingle(target, value, callData);
 
         bytes memory fullCallData = abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, execMode, executionCalldata),
-            bytes20(nextOwner)
+            abi.encodeWithSelector(account.execute.selector, execMode, executionCalldata), bytes20(nextOwner)
         );
 
         return PackedUserOperation({
