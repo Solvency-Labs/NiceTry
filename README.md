@@ -3,87 +3,85 @@
 Reference Solidity implementation of the NiceTry ephemeral-key smart wallet design.
 
 > [!NOTE]
-> This repo contains contracts only. For the protocol specification see [NiceTry-Spec](https://github.com/RivaLabs-Core/ephemeral-keys). For a project overview, see [docs.nicetry.xyz](https://docs.nicetry.xyz/).
+> This repo contains contracts only. For the protocol specification see
+> [NiceTry-Spec](https://github.com/RivaLabs-Core/ephemeral-keys). For a project
+> overview, see [docs.nicetry.xyz](https://docs.nicetry.xyz/).
 
-## What this repo contains
+## What This Repo Contains
 
-ERC-4337 smart accounts that rotate the authorizing key on every UserOp. Three
-primary-signer schemes are supported, all sharing the same one-shot-rotation
-discipline:
+ERC-4337 smart account that uses FORS+C as the primary signer and rotates the
+authorizing key on every UserOp.
 
-| Mode | Scheme | Signature | Verify gas |
-|---|---|---|---|
-| 0 | ECDSA (secp256k1) | 65 B | ~5k |
-| 1 | WOTS+C | 468 B | ~73k |
-| 2 | FORS+C | 2,448 B | ~52k |
+| Scheme | Signature | Verify gas |
+| --- | ---: | ---: |
+| FORS+C | 2,448 B | ~52k |
 
-Modes 1 and 2 are post-quantum: WOTS+C is a Winternitz one-time signature with
-checksum, FORS+C is a Forest of Random Subsets few-time signature. Both use
-the SPHINCS+ FIPS 205 ADRS layout.
+FORS+C is a Forest of Random Subsets few-time signature using the SPHINCS+ FIPS
+205 ADRS layout and a grinding optimization. Compared with WOTS+C, accidental
+key reuse degrades more gracefully, which is why it is now the main account
+implementation.
 
-A single factory (`SimpleAccountFactory`) deploys the right account variant
-based on a `mode` parameter. ECDSA is the baseline; WOTS+C and FORS+C are the
-post-quantum extensions of the same ephemeral-key idea.
+`SimpleAccountFactory` deploys FORS-backed `SimpleAccount` clones. The older
+ECDSA and WOTS+C account/module work remains under `other-implementations/` for
+comparison and regression tests.
 
-For modular accounts (no rebuild required), three separate ERC-7579 validators
-under `src/Modules/`:
+Frame-transaction work is split into `FrameAccount` plus an opcode/runtime
+adapter task. The account logic is present; the EIP-8141 opcode bridge is still
+deliberately abstract.
 
-- **`RotatingECDSAValidator`**: Biconomy Nexus / canonical ERC-7579.
-- **`KernelRotatingECDSAValidator`**: ZeroDev Kernel v3.1.
-- **`KernelRotatingWOTSValidator`**: ZeroDev Kernel v3.1, post-quantum.
+## Contract Layout
 
-Bundled vs. composable: pick the factory + a mode for a self-contained
-deployment, pick a validator module to extend an existing modular account.
-
-## Contract layout
-
-```
+```text
 src/
-├── SimpleAccountFactory.sol             multi-mode CREATE2 factory
-├── SimpleAccounts/
-│   ├── SimpleAccount_ECDSA.sol          mode 0: ECDSA primary signer
-│   ├── SimpleAccount_WOTS.sol           mode 1: WOTS+C primary signer
-│   └── SimpleAccount_FORS.sol           mode 2: FORS+C primary signer
-├── Verifiers/
-│   ├── WotsCVerifier.sol                post-quantum verifier (mode 1)
-│   └── ForsVerifier.sol                 post-quantum verifier (mode 2)
-├── Interfaces/
-│   ├── IWotsCVerifier.sol
-│   └── IForsVerifier.sol
-├── Modules/
-│   ├── RotatingECDSAValidator.sol       ERC-7579 (Nexus-family)
-│   ├── KernelRotatingECDSAValidator.sol ZeroDev Kernel v3.1
-│   ├── KernelRotatingWOTSValidator.sol  ZeroDev Kernel v3.1, post-quantum
-│   ├── IERC7579.sol  IKernelValidator.sol
-│   └── MockKernelAccount.sol  MockNexusAccount.sol  (test mocks)
-└── Utility/
-    └── token.sol                        TestToken (dummy ERC20 for testing)
++-- SimpleAccount.sol                    ERC-4337 FORS-backed account
++-- SimpleAccountFactory.sol             FORS-only CREATE2 factory
++-- FrameAccount.sol                      EIP-8141 frame account logic
++-- frame/
+|   +-- FrameTransactionLib.sol           EIP-8141 constants
++-- Verifiers/
+|   +-- ForsVerifier.sol                  FORS+C verifier
++-- Interfaces/
+|   +-- ISignatureVerifier.sol
++-- Utility/
+    +-- token.sol                         TestToken
+
+other-implementations/
++-- LegacySimpleAccountFactory.sol        ECDSA/WOTS comparison factory
++-- ecdsa/
+|   +-- SimpleAccount_ECDSA.sol
+|   +-- RotatingECDSAValidator.sol
+|   +-- KernelRotatingECDSAValidator.sol
++-- wots/
+|   +-- SimpleAccount_WOTS.sol
+|   +-- WotsCVerifier.sol
+|   +-- IWotsCVerifier.sol
+|   +-- KernelRotatingWOTSValidator.sol
++-- kernel/
+    +-- IERC7579.sol  IKernelValidator.sol
+    +-- MockKernelAccount.sol  MockNexusAccount.sol
 ```
 
 ## Parameters
 
 Parameters for the post-quantum schemes are still in a tuning phase. None of
-the current choices are definitive, and we expect to revisit them as the
-design and tooling mature.
-
-**WOTS+C** (`src/Verifiers/WotsCVerifier.sol`): W=32 (5-bit Winternitz),
-L=26 chains, N=16, target sum = L·(W−1)/2 = 403. Signature 468 bytes.
-Signer hashes per signature: ~1.5k (full keygen + chain walks + counter
-search). No tree to cache; chains are 32-step linear sequences and the
-signer state is just the 16 B seed.
+the current choices are definitive, and we expect to revisit them as the design
+and tooling mature.
 
 **FORS+C** (`src/Verifiers/ForsVerifier.sol`): K=26 trees, A=5 (32 leaves
 each), N=16. Signature 2,448 bytes. q-degradation: q=1 = 128 bits (NIST
 Level 1), q=2 = 104, q=5 = 70. Signer hashes per signature: ~2.4k
 (interactive on hardware wallets). Tree cache per keypair: ~25 KB
-(K-1 = 25 trees × 63 nodes × 16 B).
+(K-1 = 25 trees x 63 nodes x 16 B).
 
-To retune either scheme, edit the primary parameters at the top of the
-verifier file. All derived constants (signature layout, hash inputs, loop
-bounds, masks) recompute automatically. See the relevant verifier file's
-header comment for the trade-off table.
+**WOTS+C** (`other-implementations/wots/WotsCVerifier.sol`): W=32
+(5-bit Winternitz), L=26 chains, N=16, target sum = L*(W-1)/2 = 403.
+Signature 468 bytes. It is retained as a legacy comparison implementation.
 
-## Build and test
+To retune FORS+C, edit the primary parameters at the top of
+`src/Verifiers/ForsVerifier.sol`. All derived constants (signature layout,
+hash inputs, loop bounds, masks) recompute automatically.
+
+## Build And Test
 
 ```bash
 forge install
@@ -91,22 +89,22 @@ forge build
 forge test
 ```
 
-180 tests across 12 suites. Coverage includes:
-- Round-trip cryptographic tests for both post-quantum verifiers using
-  in-Solidity signer libraries (`test/{Wots,Fors}CVerifier.t.sol`).
-- Account-side mock-based tests for all three signer modes.
-- ZeroDev Kernel + Biconomy Nexus integration tests for the validator modules.
-- Gas-measurement tests for verifiers and deployment costs.
+215 tests across 15 suites. Coverage includes:
+
+- Round-trip cryptographic tests for the main FORS verifier.
+- Main account and frame-account tests.
+- Legacy WOTS/ECDSA account, module, integration, and gas tests under
+  `test/other-implementations/`.
 
 ## Deploy
 
-A deploy script lives at `script/Deploy.s.sol`. Running it deploys two
-verifiers (`WotsCVerifier`, `ForsVerifier`), three account implementations
-(one per mode, deployed by the factory's constructor), and the factory
-itself. The script targets the canonical ERC-4337 EntryPoint v0.7, which
-lives at the same address on mainnet, Sepolia, and other rollups.
+A deploy script lives at `script/Deploy.s.sol`. Running it deploys
+`ForsVerifier`, the FORS-only `SimpleAccountFactory`, and the single
+`SimpleAccount` implementation created by the factory constructor. The script
+targets the canonical ERC-4337 EntryPoint v0.7, which lives at the same address
+on mainnet, Sepolia, and other rollups.
 
-## Related repos
+## Related Repos
 
 - [NiceTry-Spec](https://github.com/RivaLabs-Core/ephemeral-keys): protocol specification and design rationale
 - [NiceTry-Wallet](https://github.com/RivaLabs-Core/NiceTry-Wallet): standalone wallet demo with local key management

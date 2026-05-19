@@ -7,11 +7,11 @@ It intentionally describes the contract-visible transcript, not a hardware
 wallet UX. If two implementations follow this document, they should produce
 signatures that recover the same owner address in:
 
-- `src/Verifiers/WotsCVerifier.sol`
 - `src/Verifiers/ForsVerifier.sol`
-- `src/SimpleAccounts/SimpleAccount_WOTS.sol`
-- `src/SimpleAccounts/SimpleAccount_FORS.sol`
-- `src/Modules/KernelRotatingWOTSValidator.sol`
+- `src/SimpleAccount.sol`
+- `other-implementations/wots/WotsCVerifier.sol`
+- `other-implementations/wots/SimpleAccount_WOTS.sol`
+- `other-implementations/wots/KernelRotatingWOTSValidator.sol`
 
 ECDSA is included only for account-level binding rules. The post-quantum
 signature formats are WOTS+C and FORS+C.
