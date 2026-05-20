@@ -57,7 +57,18 @@ other-implementations/
 +-- kernel/
     +-- IERC7579.sol  IKernelValidator.sol
     +-- MockKernelAccount.sol  MockNexusAccount.sol
+
+docs/
++-- fors-parameters.md                  FORS+C parameter notes
++-- fors-two-forest-cache.md            FORS+C cache/reuse notes
++-- frame-rotation-validation.md        Frame rotation validation checks
++-- signing-spec.md                     Signing payload layout
 ```
+
+The `docs/` directory contains hand-written design notes for the active FORS
+implementation: parameter choices, signer/cache behavior, signing payloads, and
+the frame-account rule that ties validation to the next `rotateOwner` frame.
+Generated Forge documentation remains ignored.
 
 ## Parameters
 
