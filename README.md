@@ -12,7 +12,7 @@ authorizing key on every UserOp.
 
 | Scheme | Signature | Verify gas |
 | --- | ---: | ---: |
-| FORS+C | 2,448 B | ~52k |
+| FORS+C | 2,448 B | ~35k |
 
 FORS+C is a Forest of Random Subsets few-time signature using the SPHINCS+ FIPS
 205 ADRS layout and a grinding optimization. Compared with WOTS+C, accidental
@@ -23,7 +23,7 @@ implementation.
 ECDSA and WOTS+C account/module work remains under `other-implementations/` for
 comparison and regression tests.
 
-Frame-transaction work is split into `FrameAccount` plus an opcode/runtime
+Frame transactions related work is split into `FrameAccount` plus an opcode/runtime
 adapter task. The account logic is present; the EIP-8141 opcode bridge is still
 deliberately abstract.
 
