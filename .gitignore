@@ -18,6 +18,7 @@ docs/*
 !docs/fors-parameters.md
 !docs/fors-two-forest-cache.md
 !docs/fors-frame-account-plan.md
+!docs/frame-rotation-validation.md
 !docs/signing-spec.md
 
 # Dotenv file

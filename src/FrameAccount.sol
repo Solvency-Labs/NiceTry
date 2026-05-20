@@ -58,6 +58,7 @@ abstract contract FrameAccount {
         _rotateOwner(nextOwner);
     }
 
+    /// @notice Validation of the FORS signature + require the next frame to be exclusively a call to rotateOwner().
     function _validateFrameSignature(bytes calldata signature) internal view virtual {
         if (signature.length != FORS_SIG_LEN) revert FrameAccountBadSignatureLength(signature.length);
 
