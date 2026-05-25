@@ -17,8 +17,9 @@ broadcast/
 docs/*
 !docs/fors-parameters.md
 !docs/fors-two-forest-cache.md
-!docs/fors-frame-account-plan.md
-!docs/signing-spec.md
+!docs/signing-spec.node_modules
+
+images/
 
 # Dotenv file
 .env
