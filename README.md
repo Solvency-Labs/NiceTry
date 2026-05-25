@@ -3,8 +3,7 @@
 Reference Solidity implementation of the NiceTry ephemeral-key smart wallet design.
 
 > [!NOTE]
-> This repo contains contracts only. For the protocol specification see
-> [Ephemeral-Keys-Protocol](https://github.com/RivaLabs-Core/ephemeral-keys).
+> This repo contains contracts only. For the protocol specification see [Ephemeral-Keys-Protocol](https://github.com/RivaLabs-Core/ephemeral-keys).
 
 ## What This Repo Contains
 
@@ -13,7 +12,7 @@ authorizing key on every UserOp.
 
 | Scheme | Signature | Verify gas |
 | --- | ---: | ---: |
-| FORS+C | 2,448 B | ~52k |
+| FORS+C | 2,448 B | ~35k |
 
 FORS+C is a Forest of Random Subsets few-time signature using the SPHINCS+ FIPS
 205 ADRS layout and a grinding optimization. Compared with WOTS+C, accidental
@@ -24,7 +23,7 @@ implementation.
 ECDSA and WOTS+C account/module work remains under `other-implementations/` for
 comparison and regression tests.
 
-Frame-transaction work is split into `FrameAccount` plus an opcode/runtime
+Frame transactions related work is split into `FrameAccount` plus an opcode/runtime
 adapter task. The account logic is present; the EIP-8141 opcode bridge is still
 deliberately abstract.
 
@@ -58,7 +57,18 @@ other-implementations/
 +-- kernel/
     +-- IERC7579.sol  IKernelValidator.sol
     +-- MockKernelAccount.sol  MockNexusAccount.sol
+
+docs/
++-- fors-parameters.md                  FORS+C parameter notes
++-- fors-two-forest-cache.md            FORS+C cache/reuse notes
++-- frame-rotation-validation.md        Frame rotation validation checks
++-- signing-spec.md                     Signing payload layout
 ```
+
+The `docs/` directory contains hand-written design notes for the active FORS
+implementation: parameter choices, signer/cache behavior, signing payloads, and
+the frame-account rule that ties validation to the next `rotateOwner` frame.
+Generated Forge documentation remains ignored.
 
 ## Parameters
 
