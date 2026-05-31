@@ -103,4 +103,31 @@ theorem two_word_writes (w0 w1 : UInt256) :
         (ByteArray.write w0.toByteArray 0 ByteArray.empty 0 32) 32 32
         hisize.symm hs1.symm (by omega), hin]
 
+/-- Concatenated `.data` of a list of byte arrays. -/
+def concatData : List ByteArray → Array UInt8
+  | [] => #[]
+  | w :: ws => w.data ++ concatData ws
+
+/-- Write a list of 32-byte words consecutively, each appended at the current end
+    of memory — the general `mstore(0,w₀); mstore(0x20,w₁); …` choreography. -/
+def writeWords32 : List ByteArray → ByteArray → ByteArray
+  | [], mem => mem
+  | w :: ws, mem => writeWords32 ws (ByteArray.write w 0 mem mem.size 32)
+
+/-- The bytes after an n-word append are `mem ‖ w₀ ‖ w₁ ‖ …` — the inductive
+    generalization of `two_word_writes`, reusable for every multi-word transcript
+    (hmsg, leaf, node, roots). -/
+theorem writeWords32_data (ws : List ByteArray) (mem : ByteArray)
+    (hsz : ∀ w ∈ ws, w.size = 32) :
+    (writeWords32 ws mem).data = mem.data ++ concatData ws := by
+  induction ws generalizing mem with
+  | nil => simp [writeWords32, concatData]
+  | cons w ws ih =>
+    have hw : w.size = 32 := hsz w (List.mem_cons_self ..)
+    have hstep : (ByteArray.write w 0 mem mem.size 32).data = mem.data ++ w.data :=
+      byteArray_write_append w mem mem.size 32 rfl hw.symm (by omega)
+    have hsz' : ∀ x ∈ ws, x.size = 32 := fun x hx => hsz x (List.mem_cons_of_mem _ hx)
+    show (writeWords32 ws (ByteArray.write w 0 mem mem.size 32)).data = _
+    rw [ih _ hsz', concatData, hstep, Array.append_assoc]
+
 end NiceTry.Fors.Bridge
