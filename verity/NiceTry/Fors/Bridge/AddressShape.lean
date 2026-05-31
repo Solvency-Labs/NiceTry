@@ -49,4 +49,25 @@ theorem address_derivation_eq
   rw [hbytes]
   exact evm_keccak_address _ pkSeed pkRoot rfl
 
+/-- **Address-shape equivalence, real-contract version.** Same conclusion as
+    `address_derivation_eq`, but matching the actual execution: `pkSeed` already
+    sits at `0x00` in a larger, populated memory and the contract does a single
+    `mstore(0x20, pkRoot)` (overwrite within bounds) before hashing. No
+    empty-memory assumption. -/
+theorem address_derivation_eq_overwrite
+    (m : MachineState) (o20 pkSeed pkRoot : UInt256)
+    (h20 : o20.toNat = 32) (hsize : 64 ≤ m.memory.size)
+    (hpk : m.memory.data.extract 0 32 = pkSeed.toByteArray.data) :
+    (fromByteArrayBigEndian
+        (ffi.KEC ((m.mstore o20 pkRoot).memory.readWithPadding 0 0x40)))
+        &&& Lower160Mask
+      = addressFromRoot pkSeed.toNat pkRoot.toNat := by
+  have hbytes : (m.mstore o20 pkRoot).memory.readWithPadding 0 0x40
+                  = pkSeed.toByteArray ++ pkRoot.toByteArray := by
+    apply ByteArray.ext
+    rw [ByteArray.data_append]
+    exact address_keccak_input_overwrite m o20 pkSeed pkRoot h20 hsize hpk
+  rw [hbytes]
+  exact evm_keccak_address _ pkSeed pkRoot rfl
+
 end NiceTry.Fors.Bridge

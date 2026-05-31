@@ -83,6 +83,51 @@ theorem readWithPadding_exact (s : ByteArray) (n : Nat)
     rw [hn]; simp
   rw [ffi_zeroes_eq_empty _ hz, byteArray_append_empty]
 
+/-- Overwrite `source` (a full word) **within** existing memory — `destAddr+len`
+    inside `dest` — splicing it between the untouched prefix and tail. This is the
+    real-contract `mstore` (memory is already populated), vs `byteArray_write_append`
+    which grows memory at the end. -/
+theorem byteArray_write_overwrite
+    (source dest : ByteArray) (destAddr len : Nat)
+    (hlen : len = source.size) (hpos : 0 < len) (hbound : destAddr + len ≤ dest.size) :
+    (ByteArray.write source 0 dest destAddr len).data
+      = dest.data.extract 0 destAddr ++ source.data
+          ++ dest.data.extract (destAddr + len) dest.size := by
+  subst hlen
+  unfold ByteArray.write
+  rw [if_neg (by omega), if_neg (by omega)]
+  have hds : dest.data.size = dest.size := rfl
+  have hss : source.data.size = source.size := rfl
+  have hz0 : ({ toBitVec := (↑(0 : Nat)) } : USize).toNat = 0 := by simp [USize.toNat]
+  have hmin : min dest.size (destAddr + source.size) = destAddr + source.size := by omega
+  have hdpl : destAddr - dest.size = 0 := by omega
+  simp only [ByteArray.copySlice, ByteArray.data_append, Nat.sub_zero, Nat.min_self,
+    hmin, Nat.sub_self, hdpl, zeroes_data_nil hz0, Array.append_empty, hss, hds,
+    Nat.zero_add, Nat.add_zero]
+  rw [Array.extract_eq_self_of_le (Nat.le_of_eq hss)]
+
+/-- Reading a prefix `[0, n)` of a larger memory back is `dest.extract 0 n` — what
+    `keccak256(0, n)` sees when `n ≤ size`. Generalizes `readWithPadding_exact`. -/
+theorem readWithPadding_prefix (s : ByteArray) (n : Nat)
+    (hn : n ≤ s.size) (h0 : 0 < s.size) (hlt : n < 2 ^ 64) :
+    s.readWithPadding 0 n = s.extract 0 n := by
+  have hds : s.data.size = s.size := rfl
+  have hr : s.readWithoutPadding 0 n = s.extract 0 n := by
+    unfold ByteArray.readWithoutPadding
+    rw [if_neg (by omega)]
+    apply ByteArray.ext
+    simp only [Nat.zero_add, ByteArray.data_extract]
+    congr 1
+    omega
+  have hrs : (s.extract 0 n).size = n := by
+    simp only [ByteArray.size_extract]; omega
+  unfold ByteArray.readWithPadding
+  rw [if_neg (by omega)]
+  simp only [hr]
+  have hz : ({ toBitVec := (↑n - ↑(s.extract 0 n).size : BitVec System.Platform.numBits) } : USize).toNat = 0 := by
+    rw [hrs]; simp
+  rw [ffi_zeroes_eq_empty _ hz, byteArray_append_empty]
+
 /-- Two consecutive 32-byte word writes at offsets 0 and 32 into empty memory
     concatenate their encodings — the `mstore(0x00, w0); mstore(0x20, w1)` pattern
     underlying the FORS address-derivation transcript. -/
@@ -102,6 +147,15 @@ theorem two_word_writes (w0 w1 : UInt256) :
   rw [byteArray_write_append w1.toByteArray
         (ByteArray.write w0.toByteArray 0 ByteArray.empty 0 32) 32 32
         hisize.symm hs1.symm (by omega), hin]
+
+/-- Reading the first `A.size + B.size` elements of `A ++ B ++ C` drops the tail
+    `C` — used to extract the keccak-input window out of a larger memory. -/
+theorem extract_two_prefix {α} (A B C : Array α) (n : Nat) (hn : n = A.size + B.size) :
+    (A ++ B ++ C).extract 0 n = A ++ B := by
+  subst hn
+  have h1 : (A ++ B).size = A.size + B.size := Array.size_append
+  rw [Array.extract_append, Array.extract_eq_self_of_le (Nat.le_of_eq h1),
+      Array.extract_empty_of_stop_le_start (by rw [h1]; omega), Array.append_empty]
 
 /-- Concatenated `.data` of a list of byte arrays. -/
 def concatData : List ByteArray → Array UInt8
