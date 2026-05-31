@@ -41,4 +41,15 @@ axiom ffi_zeroes_get! (n : USize) (i : Nat) (h : i < n.toNat) :
 axiom ffi_zeroes_eq_empty (n : USize) (h : n.toNat = 0) :
     ffi.ByteArray.zeroes n = ByteArray.empty
 
+/-! ## Provable-but-upstream-private (intended to be discharged, not permanent trust)
+
+The fact below is *true and provable* — EVMYulLean even has the lemmas
+(`toBytes'_le`, `toBytes'_UInt256_le`) — but they and `toBytes'` are `private`, so
+they cannot be referenced from this module, and EVMYulLean is consumed as a fetched
+dependency (can't patch in place). Tracked as trust ONLY until an upstream PR to
+`lfglabs-dev/EVMYulLean` de-privatizes `toBytes'_le`, after which this becomes a
+`theorem`. It is a total-correctness fact about a 256-bit word's big-endian
+encoding, not a cryptographic assumption. -/
+axiom uint256_toByteArray_size (v : UInt256) : (UInt256.toByteArray v).size = 32
+
 end NiceTry.Fors.Bridge
