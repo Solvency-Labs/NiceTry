@@ -34,5 +34,6 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.ByteArrayLemmas,
     `NiceTry.Fors.Bridge.EvmMemory,
     `NiceTry.Fors.Bridge.ForsRuntime,
+    `NiceTry.Fors.Bridge.EvmRun,
     `NiceTry.Fors.Bridge.AddressShape
   ]
