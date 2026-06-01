@@ -1,4 +1,5 @@
 import EvmYul.MachineStateOps
+import Mathlib.Data.Array.Extract
 import NiceTry.Fors.Bridge.EvmFfiSpec
 
 /-!
@@ -128,6 +129,30 @@ theorem readWithPadding_prefix (s : ByteArray) (n : Nat)
     rw [hrs]; simp
   rw [ffi_zeroes_eq_empty _ hz, byteArray_append_empty]
 
+/-- Reading an in-bounds memory window `[start, start+n)` gives that exact slice.
+    This is the nonzero-offset companion to `readWithPadding_prefix`, used for
+    the leaf/node scratch region at `0x380`. -/
+theorem readWithPadding_window (s : ByteArray) (start n : Nat)
+    (hbound : start + n ≤ s.size) (hpos : 0 < n) (hlt : n < 2 ^ 64) :
+    s.readWithPadding start n = s.extract start (start + n) := by
+  have hstart : start < s.size := by omega
+  have hnsize : n ≤ s.size := by omega
+  have hr : s.readWithoutPadding start n = s.extract start (start + n) := by
+    unfold ByteArray.readWithoutPadding
+    rw [if_neg (by omega)]
+    rw [Nat.min_eq_left hnsize]
+  have hrs : (s.extract start (start + n)).size = n := by
+    simp only [ByteArray.size_extract]
+    omega
+  unfold ByteArray.readWithPadding
+  rw [if_neg (by omega)]
+  simp only [hr]
+  have hz : ({ toBitVec := (↑n - ↑(s.extract start (start + n)).size :
+      BitVec System.Platform.numBits) } : USize).toNat = 0 := by
+    rw [hrs]
+    simp
+  rw [ffi_zeroes_eq_empty _ hz, byteArray_append_empty]
+
 /-- Two consecutive 32-byte word writes at offsets 0 and 32 into empty memory
     concatenate their encodings — the `mstore(0x00, w0); mstore(0x20, w1)` pattern
     underlying the FORS address-derivation transcript. -/
@@ -157,10 +182,92 @@ theorem extract_two_prefix {α} (A B C : Array α) (n : Nat) (hn : n = A.size + 
   rw [Array.extract_append, Array.extract_eq_self_of_le (Nat.le_of_eq h1),
       Array.extract_empty_of_stop_le_start (by rw [h1]; omega), Array.append_empty]
 
+/-- Reading `A ++ B` plus a prefix of `C` out of `A ++ B ++ C`. -/
+theorem extract_three_prefix {α} (A B C : Array α) (n : Nat) :
+    (A ++ B ++ C).extract 0 (A.size + B.size + n) = A ++ B ++ C.extract 0 n := by
+  rw [show A ++ B ++ C = (A ++ B) ++ C by rw [Array.append_assoc]]
+  rw [Array.extract_append]
+  have hAB : (A ++ B).size = A.size + B.size := Array.size_append
+  rw [Array.extract_eq_self_of_le (by rw [hAB]; omega)]
+  rw [show 0 - (A ++ B).size = 0 by omega]
+  rw [show A.size + B.size + n - (A ++ B).size = n by rw [hAB]; omega]
+
+/-- Reading the middle `B` out of `A ++ B ++ C`. -/
+theorem extract_middle {α} (A B C : Array α) :
+    (A ++ B ++ C).extract A.size (A.size + B.size) = B := by
+  rw [show A ++ B ++ C = A ++ (B ++ C) by rw [Array.append_assoc]]
+  rw [Array.extract_append_right' (a := A) (b := B ++ C)
+    (i := A.size) (j := A.size + B.size) (by omega)]
+  rw [show A.size - A.size = 0 by omega]
+  rw [show A.size + B.size - A.size = B.size by omega]
+  rw [Array.extract_append_left' (a := B) (b := C) (i := 0) (j := B.size) (by omega)]
+  exact Array.extract_eq_self_of_le (by omega)
+
+/-- Splitting an array at `n` into prefix and suffix gives the original array. -/
+theorem array_extract_prefix_suffix {α} (a : Array α) (n : Nat) (hn : n ≤ a.size) :
+    a.extract 0 n ++ a.extract n a.size = a := by
+  apply Array.ext
+  · simp only [Array.size_append, Array.size_extract]
+    omega
+  · intro i h1 h2
+    by_cases hi : i < n
+    · rw [Array.getElem_append_left (show i < (a.extract 0 n).size by
+        simp only [Array.size_extract]; omega)]
+      rw [Array.getElem_extract]
+      congr
+      omega
+    · rw [Array.getElem_append_right (show (a.extract 0 n).size ≤ i by
+        simp only [Array.size_extract]; omega)]
+      rw [Array.getElem_extract]
+      congr
+      simp only [Array.size_extract]
+      omega
+
+/-- Extracting from a suffix-to-end shifts the start by the suffix offset. -/
+theorem extract_after_extract_to_end {α} (a : Array α) {start stop off : Nat}
+    (hstart : start ≤ stop) (hstop : stop ≤ a.size) (hoff : off ≤ stop - start) :
+    (a.extract start stop).extract off (stop - start) = a.extract (start + off) stop := by
+  apply Array.ext
+  · simp only [Array.size_extract]
+    omega
+  · intro i hi hfull
+    simp only [Array.size_extract] at hi hfull
+    rw [Array.getElem_extract, Array.getElem_extract, Array.getElem_extract]
+    congr 1
+    omega
+
+/-- Extracting a bounded window from a slice shifts both endpoints by the slice start. -/
+theorem extract_after_extract_window {α} (a : Array α) {start stop off len : Nat}
+    (hstart : start ≤ stop) (hstop : stop ≤ a.size) (hoff : off + len ≤ stop - start) :
+    (a.extract start stop).extract off (off + len) =
+      a.extract (start + off) (start + off + len) := by
+  apply Array.ext
+  · simp only [Array.size_extract]
+    omega
+  · intro i hi hfull
+    simp only [Array.size_extract] at hi hfull
+    rw [Array.getElem_extract, Array.getElem_extract, Array.getElem_extract]
+    congr 1
+    omega
+
 /-- Concatenated `.data` of a list of byte arrays. -/
 def concatData : List ByteArray → Array UInt8
   | [] => #[]
   | w :: ws => w.data ++ concatData ws
+
+/-- `concatData` over 32-byte words is exactly `32 * length` bytes. -/
+theorem concatData_size (ws : List ByteArray) (hsz : ∀ w ∈ ws, w.size = 32) :
+    (concatData ws).size = 32 * ws.length := by
+  induction ws with
+  | nil => simp [concatData]
+  | cons w ws ih =>
+      have hw : w.size = 32 := hsz w (List.mem_cons_self ..)
+      have hwd : w.data.size = 32 := hw
+      have hsz' : ∀ x ∈ ws, x.size = 32 :=
+        fun x hx => hsz x (List.mem_cons_of_mem _ hx)
+      rw [concatData, Array.size_append, ih hsz', hwd]
+      simp only [List.length_cons]
+      omega
 
 /-- Write a list of 32-byte words consecutively, each appended at the current end
     of memory — the general `mstore(0,w₀); mstore(0x20,w₁); …` choreography. -/
@@ -183,5 +290,182 @@ theorem writeWords32_data (ws : List ByteArray) (mem : ByteArray)
     have hsz' : ∀ x ∈ ws, x.size = 32 := fun x hx => hsz x (List.mem_cons_of_mem _ hx)
     show (writeWords32 ws (ByteArray.write w 0 mem mem.size 32)).data = _
     rw [ih _ hsz', concatData, hstep, Array.append_assoc]
+
+/-- Write a list of 32-byte words consecutively starting at a fixed offset,
+    overwriting an existing memory window. -/
+def writeWords32At : Nat → List ByteArray → ByteArray → ByteArray
+  | _, [], mem => mem
+  | offset, w :: ws, mem =>
+      writeWords32At (offset + 32) ws (ByteArray.write w 0 mem offset 32)
+
+/-- The bytes after an n-word overwrite are
+    `prefix ‖ w₀ ‖ w₁ ‖ … ‖ suffix`. This is the write-over-existing-memory
+    companion to `writeWords32_data`, for the real contract choreography where
+    hmsg/leaf/node/roots reuse already-populated memory. -/
+theorem writeWords32At_data (ws : List ByteArray) (mem : ByteArray) (offset : Nat)
+    (hsz : ∀ w ∈ ws, w.size = 32)
+    (hbound : offset + 32 * ws.length ≤ mem.size) :
+    (writeWords32At offset ws mem).data =
+      mem.data.extract 0 offset ++ concatData ws ++
+        mem.data.extract (offset + 32 * ws.length) mem.size := by
+  induction ws generalizing mem offset with
+  | nil =>
+      simp only [writeWords32At, concatData, List.length_nil, Nat.mul_zero]
+      exact (array_extract_prefix_suffix mem.data offset (by simpa using hbound)).symm
+  | cons w ws ih =>
+      have hw : w.size = 32 := hsz w (List.mem_cons_self ..)
+      have hsz' : ∀ x ∈ ws, x.size = 32 :=
+        fun x hx => hsz x (List.mem_cons_of_mem _ hx)
+      have hbound_cons : offset + (32 * ws.length + 32) ≤ mem.size := by
+        simpa [Nat.mul_succ, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hbound
+      have hwrite_bound : offset + 32 ≤ mem.size := by omega
+      have hmd : mem.data.size = mem.size := rfl
+      have hprefix_size : (mem.data.extract 0 offset).size = offset := by
+        rw [Array.size_extract]
+        rw [show min offset mem.data.size = offset by rw [hmd]; omega]
+        simp
+      have htail0_size :
+          (mem.data.extract (offset + 32) mem.size).size = mem.size - (offset + 32) := by
+        rw [Array.size_extract]
+        rw [show min mem.size mem.data.size = mem.size by rw [hmd]; simp]
+      let mem1 := ByteArray.write w 0 mem offset 32
+      have hstep : mem1.data = mem.data.extract 0 offset ++ w.data ++
+          mem.data.extract (offset + 32) mem.size := by
+        dsimp [mem1]
+        exact byteArray_write_overwrite w mem offset 32 hw.symm (by omega) hwrite_bound
+      have hmem1size : mem1.size = mem.size := by
+        show mem1.data.size = mem.size
+        rw [hstep]
+        have hwd : w.data.size = 32 := hw
+        rw [Array.size_append, Array.size_append, hprefix_size, hwd, htail0_size]
+        omega
+      have hbound' : offset + 32 + 32 * ws.length ≤ mem1.size := by
+        rw [hmem1size]
+        omega
+      show (writeWords32At (offset + 32) ws mem1).data = _
+      rw [ih mem1 (offset + 32) hsz' hbound']
+      rw [hstep, hmem1size]
+      have hwd : w.data.size = 32 := hw
+      have hpref :
+          Array.extract
+            (mem.data.extract 0 offset ++ w.data ++ mem.data.extract (offset + 32) mem.size)
+            0 (offset + 32)
+            = mem.data.extract 0 offset ++ w.data := by
+        exact extract_two_prefix _ _ _ (offset + 32) (by rw [hprefix_size, hwd])
+      have htail :
+          Array.extract
+            (mem.data.extract 0 offset ++ w.data ++ mem.data.extract (offset + 32) mem.size)
+            (offset + 32 + 32 * ws.length) mem.size
+            = mem.data.extract (offset + 32 + 32 * ws.length) mem.size := by
+        let A := mem.data.extract 0 offset
+        let B := w.data
+        let C := mem.data.extract (offset + 32) mem.size
+        change (A ++ B ++ C).extract (offset + 32 + 32 * ws.length) mem.size =
+          mem.data.extract (offset + 32 + 32 * ws.length) mem.size
+        have hAB : (A ++ B).size = offset + 32 := by
+          dsimp [A, B]
+          rw [Array.size_append, hprefix_size, hwd]
+        have hC : C.size = mem.size - (offset + 32) := by
+          dsimp [C]
+          exact htail0_size
+        have hstart_eq : offset + 32 + 32 * ws.length = (A ++ B).size + 32 * ws.length := by
+          rw [hAB]
+        have hstop_eq : mem.size = (A ++ B).size + C.size := by
+          rw [hAB, hC]
+          omega
+        rw [hstart_eq, hstop_eq]
+        rw [Array.extract_append_right' (a := A ++ B) (b := C)
+          (i := (A ++ B).size + 32 * ws.length)
+          (j := (A ++ B).size + C.size) (by omega)]
+        rw [show (A ++ B).size + 32 * ws.length - (A ++ B).size = 32 * ws.length by omega]
+        rw [show (A ++ B).size + C.size - (A ++ B).size = C.size by omega]
+        rw [show (A ++ B).size + 32 * ws.length = offset + 32 + 32 * ws.length by rw [hAB]]
+        rw [show (A ++ B).size + C.size = mem.size by exact hstop_eq.symm]
+        change C.extract (32 * ws.length) C.size =
+          mem.data.extract (offset + 32 + 32 * ws.length) mem.size
+        rw [hC]
+        dsimp [C]
+        simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+          (extract_after_extract_to_end mem.data (start := offset + 32) (stop := mem.size)
+            (off := 32 * ws.length) (by omega) (by rw [hmd]) (by omega))
+      rw [hpref, htail]
+      simp only [concatData, List.length_cons]
+      have hoff : offset + 32 * (ws.length + 1) = offset + 32 + 32 * ws.length := by
+        omega
+      rw [hoff]
+      simp only [Array.append_assoc]
+
+/-- In-bounds fixed-offset 32-byte overwrites preserve total memory size. -/
+theorem writeWords32At_size (ws : List ByteArray) (mem : ByteArray) (offset : Nat)
+    (hsz : ∀ w ∈ ws, w.size = 32)
+    (hbound : offset + 32 * ws.length ≤ mem.size) :
+    (writeWords32At offset ws mem).size = mem.size := by
+  have hdata := writeWords32At_data ws mem offset hsz hbound
+  have hconcat : (concatData ws).size = 32 * ws.length := concatData_size ws hsz
+  have hprefix : (mem.data.extract 0 offset).size = offset := by
+    have hmd : mem.data.size = mem.size := rfl
+    rw [Array.size_extract]
+    rw [show min offset mem.data.size = offset by rw [hmd]; omega]
+    simp
+  have htail :
+      (mem.data.extract (offset + 32 * ws.length) mem.size).size =
+        mem.size - (offset + 32 * ws.length) := by
+    have hmd : mem.data.size = mem.size := rfl
+    rw [Array.size_extract]
+    rw [show min mem.size mem.data.size = mem.size by rw [hmd]; simp]
+  show (writeWords32At offset ws mem).data.size = mem.size
+  rw [hdata]
+  rw [Array.size_append, Array.size_append, hprefix, hconcat, htail]
+  omega
+
+/-- Reading back the overwritten window after `writeWords32At` gives exactly the
+    concatenated word bytes. This is the reusable Class-M keccak-input lemma for
+    fixed-size transcript shapes. -/
+theorem writeWords32At_readWithPadding_data
+    (ws : List ByteArray) (mem : ByteArray) (offset : Nat)
+    (hsz : ∀ w ∈ ws, w.size = 32)
+    (hbound : offset + 32 * ws.length ≤ mem.size)
+    (hpos : 0 < ws.length) (hlt : 32 * ws.length < 2 ^ 64) :
+    ((writeWords32At offset ws mem).readWithPadding offset (32 * ws.length)).data =
+      concatData ws := by
+  have hdata := writeWords32At_data ws mem offset hsz hbound
+  have hconcat : (concatData ws).size = 32 * ws.length := concatData_size ws hsz
+  have hprefix : (mem.data.extract 0 offset).size = offset := by
+    have hmd : mem.data.size = mem.size := rfl
+    rw [Array.size_extract]
+    rw [show min offset mem.data.size = offset by rw [hmd]; omega]
+    simp
+  have htail :
+      (mem.data.extract (offset + 32 * ws.length) mem.size).size =
+        mem.size - (offset + 32 * ws.length) := by
+    have hmd : mem.data.size = mem.size := rfl
+    rw [Array.size_extract]
+    rw [show min mem.size mem.data.size = mem.size by rw [hmd]; simp]
+  have hsize : (writeWords32At offset ws mem).size = mem.size := by
+    show (writeWords32At offset ws mem).data.size = mem.size
+    rw [hdata]
+    rw [Array.size_append, Array.size_append, hprefix, hconcat, htail]
+    omega
+  rw [readWithPadding_window _ offset (32 * ws.length)
+    (by rw [hsize]; exact hbound) (by omega) hlt]
+  rw [ByteArray.data_extract, hdata]
+  have hm :
+      (mem.data.extract 0 offset ++ concatData ws ++
+          mem.data.extract (offset + 32 * ws.length) mem.size).extract offset
+          (offset + 32 * ws.length) = concatData ws := by
+    let A := mem.data.extract 0 offset
+    let B := concatData ws
+    let C := mem.data.extract (offset + 32 * ws.length) mem.size
+    change (A ++ B ++ C).extract offset (offset + 32 * ws.length) = B
+    have hA : A.size = offset := by
+      dsimp [A]
+      exact hprefix
+    have hB : B.size = 32 * ws.length := by
+      dsimp [B]
+      exact hconcat
+    rw [show offset = A.size by rw [hA]]
+    rw [show A.size + 32 * ws.length = A.size + B.size by rw [hB]]
+    exact extract_middle _ _ _
+  exact hm
 
 end NiceTry.Fors.Bridge

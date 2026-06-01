@@ -37,6 +37,16 @@ theorem rootsRegion_end_eq : RootBufferStart + RealTrees * 32 = RootsHashLen := 
 theorem rootBufferWrite_offset (pkSeed dVal : Nat) (openings : Nat → Nat) (t : Nat) :
     (rootBufferWrite pkSeed dVal openings t).offset = RootBufferStart + t * 32 := rfl
 
+/-- Every real root slot lies inside the final roots-compression input region
+    `[0x40, 0x360)`. -/
+theorem rootBuffer_slot_in_roots_region (t : Nat) (ht : t < RealTrees) :
+    RootBufferStart ≤ RootBufferStart + t * 32 ∧
+      RootBufferStart + t * 32 + 32 ≤ RootsHashLen := by
+  constructor
+  · omega
+  · have hend := rootsRegion_end_eq
+    omega
+
 /-- Every real root slot ends at/below the scratch base — roots and scratch never overlap. -/
 theorem rootBuffer_below_scratch (t : Nat) (ht : t < RealTrees) :
     RootBufferStart + t * 32 + 32 ≤ ScratchBase := by
