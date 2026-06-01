@@ -35,8 +35,39 @@ Plan must close **both** A and B, then compose with the proved
 top of a trusted spec for the opaque primitives.
 
 Minimal trusted layer (`EvmFfiSpec.lean`, built): `ffi_zeroes_size`,
-`ffi_zeroes_get!`, `ffi_zeroes_zero`. Total-correctness specs of memory padding,
-not crypto. Plus the existing trusted `ffi.KEC` (keccak).
+`ffi_zeroes_get!`, `ffi_zeroes_eq_empty`. Total-correctness specs of memory
+padding, not crypto. Plus trusted `ffi.KEC` (keccak).
+
+Current Bridge shape status: Gap-A byte equality is proved for address, hmsg,
+leaf, node, and the roots-compression buffer (with abstract per-tree root
+values). Gap-B is still explicit trust, localized as labeled `evm_keccak_*`
+axioms in `AddressShape.lean` (`address`, `hmsg`, `leaf`, `node`, `roots`).
+These axioms bundle keccak correctness plus byte/value transcript encoding and
+masking until the planned Gap-B split replaces the encoding parts with proof.
+The FORS tree-climb loop still has to prove that the 25 abstract roots written
+into the roots buffer are exactly the model roots. The post-loop handoff is now
+named: establish `pkSeed` at `0x00` and the 25-root buffer at `0x40..0x35f`, then
+`roots_derivation_eq_from_buffer` connects the real `compressRoots` call to the
+model. The helper `roots_derivation_eq_after_loop_buffer_init` composes the
+abstract root-buffer initialization, the memory-size preservation facts, and the
+final `mstore(0x20, ADRS_roots); keccak256(0,0x360)` call; the remaining hard
+work is proving that the root values supplied to that helper are produced by the
+real FORS tree-climb loop. The sharper target is
+`roots_derivation_eq_recoverRoot_after_loop_buffer_init`: prove the pointwise
+premise `(roots t).toNat = reconstructTree ...` for each tree, and the bridge
+rewrites the final roots compression all the way to `recoverRoot`.
+`roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init` further
+breaks that pointwise premise into the six per-tree hash results: leaf plus five
+node levels. The per-node bridge lemmas
+`node_derivation_eq_climbLevel_even_overwrite` and
+`node_derivation_eq_climbLevel_odd_overwrite` package the sibling ordering needed
+by those five node facts. The typed wrappers
+`leaf_derivation_eq_model_leaf_overwrite` and
+`node_derivation_eq_model_climbLevel_{even,odd}_overwrite` further rewrite the
+EVM hash result directly into the `TypedSig`/`reconstructTree` vocabulary.
+The root-buffer loop invariant now also has a prefix form,
+`roots_loop_buffer_prefix_after_init`, for proving the 25-iteration roots write
+loop incrementally.
 
 ## The decision: how to close Gap A
 
@@ -45,7 +76,7 @@ not crypto. Plus the existing trusted `ffi.KEC` (keccak).
   `readWithPadding (after the mstores) off len = encode(writes)`. Largest effort —
   needs a from-scratch `ByteArray.write`/`readWithPadding` lemma library (word
   round-trip, adjacent-write composition, non-overlap from `MemoryLayout.lean`).
-  TCB = keccak + 3 zeroes axioms.
+  TCB = keccak/transcript bridge axioms + 3 zeroes axioms.
 * **(ii) Axiomatize the per-keccak binding (pragmatic).** One auditable axiom per
   keccak shape: "running the kernel's `mstore` choreography then `keccak256 off len`
   yields `keccakWordFromMemory call`." Sidesteps `ByteArray` entirely; larger but

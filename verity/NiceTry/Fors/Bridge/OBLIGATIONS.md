@@ -54,9 +54,29 @@ selector + head/tail bytes encoding, `RawSig.read16 off = mem-word(payload+off) 
   we prove its *input region* equals the transcript, then treat the digest as opaque,
   matching `opaque keccakWord/keccakHash16/keccakAddress` in `Fors/Hash.lean`.
 
-The one bridging axiom to state explicitly (and keep auditable): EVMYulLean
+The bridging axioms to state explicitly (and keep auditable): EVMYulLean
 `keccak256(off,len)` over a region equal to `encode(fields)` = the model's
-`keccakWord/Hash16/Address fields`. Everything else is mechanical memory reasoning.
+`keccakWord/Hash16/Address fields`. In the current Bridge these are the labeled
+`evm_keccak_*` axioms in `AddressShape.lean`; all byte-region facts feeding them
+are mechanical memory reasoning. The roots bridge currently covers the 27-word
+compression input for abstract root values; the loop proof that computes those
+values remains Class-C work. The current handoff target is
+`roots_derivation_eq_after_loop_buffer_init`: the loop must supply the 25 root
+values, after which the bridge proves the local memory layout, size preservation,
+final roots ADRS overwrite, and `compressRoots` equivalence. The follow-on helper
+`roots_derivation_eq_recoverRoot_after_loop_buffer_init` states the exact
+pointwise loop obligation needed to rewrite that result to the typed model's
+`recoverRoot`.
+
+Pure model-side targets now named for the remaining raw/guard work:
+`forcedZero_eq_evm_shape` pins the omitted-tree guard to `(dVal / 2^125) % 32`,
+`decodeTyped_reads_raw_header` pins the raw header reads, and
+`decodeOpening_reads_raw_fields` pins the per-tree `sk/auth0..auth4` offsets used
+by the raw verifier loop. `rawOpenings_treeOpening_eq_decodeTyped_opening` links
+the memory-boundary raw opening array back to the typed decoder, so the tree-loop
+proof can move between raw calldata fields and `sig.openings`;
+`reconstructTree_rawOpenings_eq_decodeTyped` carries that bridge through the
+typed Merkle reconstruction call.
 
 ## Discharge order (each builds on the previous)
 

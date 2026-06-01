@@ -34,6 +34,32 @@ theorem authOffset_eq (tree : TreeIndex) (level : AuthLevel) :
     authOffset tree level = treeOffset tree + 16 + level.val * 16 := by
   rfl
 
+theorem treeOffset_eq_raw_base (tree : TreeIndex) :
+    treeOffset tree = 32 + tree.val * 96 := by
+  rfl
+
+theorem authOffset_eq_raw_field (tree : TreeIndex) (level : AuthLevel) :
+    authOffset tree level = 32 + tree.val * 96 + 16 + level.val * 16 := by
+  rfl
+
+theorem raw_tree_field_offsets
+    (tree : TreeIndex) :
+    treeOffset tree = 32 + tree.val * 96 ∧
+      authOffset tree (Fin.mk 0 (by decide) : AuthLevel) = 32 + tree.val * 96 + 16 ∧
+      authOffset tree (Fin.mk 1 (by decide) : AuthLevel) = 32 + tree.val * 96 + 32 ∧
+      authOffset tree (Fin.mk 2 (by decide) : AuthLevel) = 32 + tree.val * 96 + 48 ∧
+      authOffset tree (Fin.mk 3 (by decide) : AuthLevel) = 32 + tree.val * 96 + 64 ∧
+      authOffset tree (Fin.mk 4 (by decide) : AuthLevel) = 32 + tree.val * 96 + 80 := by
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor <;> rfl
+
 theorem first_tree_offset_eq :
     treeOffset (Fin.mk 0 (by decide) : TreeIndex) = 32 := by
   rfl
@@ -67,6 +93,21 @@ theorem omittedIndex_bound (dVal : Word) :
   unfold omittedIndex
   exact indexAt_bound dVal RealTrees
 
+/-- The exact omitted-index arithmetic used by the verifier guard:
+    `shr 125; and 31` corresponds to `(dVal / 2^125) % 32` at the Nat model
+    level. The bitvector/`UInt256` interpretation remains part of the EVM
+    execution proof, but this pins the model-side target. -/
+def evmOmittedIndexShape (dVal : Word) : Nat :=
+  (dVal / 2 ^ 125) % 32
+
+theorem omittedIndex_eq_evm_shape (dVal : Word) :
+    omittedIndex dVal = evmOmittedIndexShape dVal := by
+  simp [omittedIndex, indexAt, evmOmittedIndexShape, twoPow, A, RealTrees, K]
+
+theorem forcedZero_eq_evm_shape (dVal : Word) :
+    forcedZero dVal = (evmOmittedIndexShape dVal == 0) := by
+  simp [forcedZero, omittedIndex_eq_evm_shape, evmOmittedIndexShape]
+
 theorem hMsg_uses_declared_transcript
     (pkSeed r : Hash16)
     (digest : Digest)
@@ -88,6 +129,20 @@ theorem nodeHash_uses_declared_transcript
     nodeHash pkSeed adrs left right =
       keccakHash16 (nodeTranscript pkSeed adrs left right) := by
   rfl
+
+theorem climbLevel_even
+    (pkSeed tree height pathIdx node sibling : Nat)
+    (hEven : pathIdx % 2 = 0) :
+    climbLevel pkSeed tree height pathIdx node sibling =
+      nodeHash pkSeed (nodeAdrs tree height (pathIdx / 2)) node sibling := by
+  simp [climbLevel, hEven]
+
+theorem climbLevel_odd
+    (pkSeed tree height pathIdx node sibling : Nat)
+    (hOdd : pathIdx % 2 ≠ 0) :
+    climbLevel pkSeed tree height pathIdx node sibling =
+      nodeHash pkSeed (nodeAdrs tree height (pathIdx / 2)) sibling node := by
+  simp [climbLevel, hOdd]
 
 theorem rootFields_length (roots : TreeIndex -> Hash16) :
     (rootFields roots).length = RealTrees := by
@@ -127,11 +182,41 @@ theorem decodeTyped_reads_header (raw : RawSig) :
     (decodeTyped raw).counter = readHash16 raw CounterOffset := by
   simp [decodeTyped]
 
+theorem decodeTyped_reads_raw_header (raw : RawSig) :
+    (decodeTyped raw).r = raw.read16 0 ∧
+      (decodeTyped raw).pkSeed = raw.read16 16 ∧
+      (decodeTyped raw).counter = raw.read16 2432 := by
+  constructor
+  · rfl
+  constructor <;> rfl
+
 theorem decodeOpening_reads_tree_fields (raw : RawSig) (tree : TreeIndex) :
     (decodeOpening raw tree).sk = readHash16 raw (treeOffset tree) /\
     (forall level : AuthLevel,
       (decodeOpening raw tree).auth level = readHash16 raw (authOffset tree level)) := by
   simp [decodeOpening]
+
+theorem decodeOpening_reads_raw_fields (raw : RawSig) (tree : TreeIndex) :
+    (decodeOpening raw tree).sk = raw.read16 (32 + tree.val * 96) ∧
+      (decodeOpening raw tree).auth (Fin.mk 0 (by decide) : AuthLevel) =
+        raw.read16 (32 + tree.val * 96 + 16) ∧
+      (decodeOpening raw tree).auth (Fin.mk 1 (by decide) : AuthLevel) =
+        raw.read16 (32 + tree.val * 96 + 32) ∧
+      (decodeOpening raw tree).auth (Fin.mk 2 (by decide) : AuthLevel) =
+        raw.read16 (32 + tree.val * 96 + 48) ∧
+      (decodeOpening raw tree).auth (Fin.mk 3 (by decide) : AuthLevel) =
+        raw.read16 (32 + tree.val * 96 + 64) ∧
+      (decodeOpening raw tree).auth (Fin.mk 4 (by decide) : AuthLevel) =
+        raw.read16 (32 + tree.val * 96 + 80) := by
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor <;> rfl
 
 theorem recoverRaw_decoded_matches_typed
     (raw : RawSig)
