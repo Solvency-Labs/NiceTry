@@ -88,6 +88,13 @@ shape if a specific proof proves intractable.
 
 ## Concrete next steps (route i)
 
+> **Status update:** steps 1–3 below are now **done** (the `ByteArray` library,
+> Gap-A per shape for address/hmsg/leaf/node/roots, and Gap-B as the labeled
+> `evm_keccak_*` axioms all landed on `evmrun-runtime`). The live remaining work is
+> step 4 — assembling `RefinesModel evmRun`, gated on the FORS tree-loop execution
+> proof. See [`PICKUP.md`](./PICKUP.md) §3 (WS-3, WS-4) for the current frontier.
+> The list below is kept as the original route-i plan of record.
+
 1. `ByteArray` lemma library: `size_append`, `writeWord` size/`get`, single-word
    round-trip `read (writeWord m a v) a = v.toByteArray`, adjacent composition.
 2. Gap-A per shape: address (2 writes) → leaf (3) → node (4) → hmsg (5) → roots (27).

@@ -1,5 +1,9 @@
 # FORS+C verifier — open obligations & discharge plan
 
+> **New here? Read [`PICKUP.md`](./PICKUP.md) first** — it has the remote/branch
+> gotcha, build instructions, what's already proved, and the remaining work split
+> into claimable workstreams. This file is the detailed obligation/discharge plan.
+
 Status snapshot (cloned `fors-verity-model`, this session):
 
 - **Structural Lean proofs: fully closed.** `grep -rn 'sorry\|admit' NiceTry/Fors` → 0 hits.
