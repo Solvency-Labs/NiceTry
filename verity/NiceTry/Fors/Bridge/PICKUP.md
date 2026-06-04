@@ -102,17 +102,29 @@ Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
     vacuous). Fix installs an account at `codeOwner` (code superseded by the override).
     Verified: `find? codeOwner |>.isSome = true` by `rfl` post-fix. **Anyone stepping
     the contract must use the fixed `evmRun`.**
-  - **Remaining for `h_len` (the real Class-A grind, multi-session):**
-    1. `Switch` selector step — note EVMYulLean's `Switch` *eagerly runs all 5 case
-       bodies* (`execSwitchCases`) then `foldr`-selects by matching `cond`; needs
-       case-split step lemmas (the naive match-in-conclusion form won't `rfl`-close,
-       same issue solved for `exec` in `Interp.lean`).
-    2. `execCall` into `fun_recover` (`exec_let_call_ok` + `execCall_ok` + `call` —
-       `call` now finds the contract post-fix).
-    3. **`calldataload` byte semantics over `encodeForsCalldata`**: `State.calldataload`
-       of the ABI bytes = `offset=0x40` / `length=raw.len` / `digest` / selector, and
-       `calldatasize=2548`; connects to the proved model-side `decodeTyped_*`.
-    4. Assemble the dispatcher trace + `fun_recover` length check into `h_len`.
+  - `Bridge/InterpCall.lean` — the last control-flow primitives: `exec_let_call` /
+    `exec_exprstmt_call` / `execCall_ok` / `execCall_err` / `call_ok` (entering
+    `fun_recover`; `call_ok` fires now that the contract is installed), and the
+    `switch` family `exec_switch_ok` + `execSwitchCases_nil/_cons_ok/_cons_halt` +
+    `foldr_switch_cons_match/_nomatch` (EVMYulLean's `switch` eagerly runs all case
+    bodies then `foldr`-selects by the scrutinee).
+  - **The interpreter-stepping foundation is now COMPLETE** — every construct in
+    `forsDispatcher` + `fun_recover` (control flow, all 14 pure builtins, all 7
+    stateful ops, user-calls, switch, expression composition) has a reduction lemma.
+  - **The one remaining brick for `h_len` — a `calldataload` byte-reasoning library
+    (sizeable, ~`EvmMemory.lean` scale):**
+    1. `ByteArray.readBytes` reduction — it routes through `copySlice` + the opaque
+       `ffi.ByteArray.zeroes` (use the `EvmFfiSpec` `ffi_zeroes_*` specs).
+    2. word round-trip `uInt256OfByteArray (UInt256.ofNat n).toByteArray = n` (for
+       `n < 2^256`) — EVMYulLean's `fromBytes'_toBytes'` is `private`, so this likely
+       becomes a trust axiom mirroring `uint256_toByteArray_size`, or a from-scratch
+       proof.
+    3. `readBytes` over `encodeForsCalldata`'s nested `++` (`selector ‖ 0x40 ‖ digest
+       ‖ len ‖ payload`) with offset/size arithmetic ⇒ `calldataload 4 = 0x40`,
+       `calldataload 0x44 = raw.len`, `calldataload 36 = digest`, `shr 224 (calldataload 0)
+       = selector`, `calldatasize = 2548`; connects to the proved model-side `decodeTyped_*`.
+    4. Assemble the dispatcher trace + `fun_recover` length check into `h_len`
+       (mechanical once 1–3 exist, using the now-complete stepping foundation).
     `h_guard` additionally needs the **hmsg keccak bridge** (Class-M): the contract's
     `dVal = keccak256(0,0xa0)` and `forcedZero` check (`forcedZero_eq_evm_shape`).
 
