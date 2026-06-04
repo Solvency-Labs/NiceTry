@@ -91,11 +91,16 @@ Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
     `evalTail_cons_ok`, `eval_call_prim`) + composition lemmas `eval_unop1` /
     `eval_binop2`, so nested pure expressions (`and(calldataload(x), not(C))`)
     evaluate compositionally (regression example included). Fuel: `+2` per arg depth.
-  - **Next brick:** the *stateful* leaves — `calldataload` (over `encodeForsCalldata`,
-    the heart of Class-A), `mstore`, `keccak256`, `return`/`revert`, and the env ops
-    `callvalue`/`calldatasize` — plus the `Switch` selector step and `execCall`
-    (entering `fun_recover`). Then assemble the dispatcher + `fun_recover`
-    length/forced-zero paths into `h_len`/`h_guard`.
+  - `Bridge/InterpState.lean` — `primCall` for the stateful ops: `calldataload`,
+    `callvalue`, `calldatasize`, `mstore`, `keccak256`, `return` (⇒ `YulHalt`),
+    `revert` (⇒ `.Revert`). State-rebuilding ops use `unfold step; cases s <;> rfl`.
+  - **Next brick:** (a) the `Switch` selector step (dispatcher
+    `switch shr(224, calldataload(0))`) and `execCall` (entering `fun_recover` /
+    `constant_FORS_SIG_LEN`); (b) **`calldataload` byte semantics over
+    `encodeForsCalldata`** — i.e. `State.calldataload` of the ABI bytes = the
+    `offset`/`length`/`digest`/`read16` fields (the model-side `decodeTyped_*` lemmas
+    are already proved). Then assemble the dispatcher + `fun_recover` length /
+    forced-zero paths into `h_len` / `h_guard`.
 
 ### WS-2 · Class-M execution wiring  — *mechanical, template exists*
 The `*_derivation_eq_overwrite` lemmas in `AddressShape.lean` assume a
