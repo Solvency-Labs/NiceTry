@@ -80,13 +80,22 @@ Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
 - Entry targets (named, not yet proved): `decodeTyped_reads_raw_header`,
   `decodeOpening_reads_raw_fields`, `rawOpenings_treeOpening_eq_decodeTyped_opening`.
 - Obligations #6, #11 in `OBLIGATIONS.md`.
-- **Foundation in place:** `Bridge/Interp.lean` has the reusable one-step `exec`
-  reductions (Block/If/Leave/Break/Continue/out-of-fuel) + `eval` base cases
-  (Lit/Var/evalArgs-nil), recipe `conv_lhs => rw [exec]` then `rw [h]`.
-  **Next brick:** per-builtin `primCall` lemmas (`mstore`, `calldataload`, `eq`,
-  `shr`, `add`, `lt`, `slt`, `gt`, `iszero`, `not`, `return`/`revert`), the
-  `Switch` selector step, and `execCall` (calling `fun_recover`) — then assemble
-  the dispatcher + `fun_recover` length/forced-zero paths into `h_len`/`h_guard`.
+- **Foundation in place (interpreter-reasoning layer):**
+  - `Bridge/Interp.lean` — one-step `exec` reductions (Block/If/Leave/Break/Continue/
+    out-of-fuel) + `eval` base cases (Lit/Var/evalArgs-nil). Recipe:
+    `conv_lhs => rw [exec]` then `rw [h]`.
+  - `Bridge/InterpOps.lean` — `primCall` lemmas for the pure stack ops
+    (`add sub lt gt slt and or xor shl shr byte eq iszero not`). Recipe:
+    `unfold primCall; simp [<step OP> = … from by unfold step; rfl]`.
+  - `Bridge/InterpEval.lean` — argument plumbing (`evalArgs_cons_ok`,
+    `evalTail_cons_ok`, `eval_call_prim`) + composition lemmas `eval_unop1` /
+    `eval_binop2`, so nested pure expressions (`and(calldataload(x), not(C))`)
+    evaluate compositionally (regression example included). Fuel: `+2` per arg depth.
+  - **Next brick:** the *stateful* leaves — `calldataload` (over `encodeForsCalldata`,
+    the heart of Class-A), `mstore`, `keccak256`, `return`/`revert`, and the env ops
+    `callvalue`/`calldatasize` — plus the `Switch` selector step and `execCall`
+    (entering `fun_recover`). Then assemble the dispatcher + `fun_recover`
+    length/forced-zero paths into `h_len`/`h_guard`.
 
 ### WS-2 · Class-M execution wiring  — *mechanical, template exists*
 The `*_derivation_eq_overwrite` lemmas in `AddressShape.lean` assume a
