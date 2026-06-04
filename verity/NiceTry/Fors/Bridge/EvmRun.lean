@@ -14,12 +14,24 @@ namespace NiceTry.Fors.Bridge
 open EvmYul EvmYul.Yul EvmYul.Yul.Ast
 
 /-- Run the contract on raw calldata; the returned 32-byte word (the recovered
-    address word) if it `RETURN`s, else `none`. -/
+    address word) if it `RETURN`s, else `none`.
+
+    NOTE: `fun_recover` is invoked via the interpreter's `call`, which first does
+    `accountMap.find? codeOwner` and errors with `MissingContract` if no account is
+    installed there — *before* `codeOverride` is ever consulted. So besides passing
+    `forsVerifierRuntime` as the code override (which supplies the function bodies),
+    we must also install an account at `codeOwner`, or the `recover` path always
+    errors out (→ `none` → `evmRun ≡ 0`). The installed account's `code` is
+    superseded by the override; it only needs to exist. -/
 def runForsCalldata (cd : ByteArray) (fuel : Nat) : Option UInt256 :=
+  let ee : EvmYul.ExecutionEnv .Yul :=
+    { (Inhabited.default : EvmYul.ExecutionEnv .Yul) with calldata := cd }
   let ss : EvmYul.SharedState .Yul :=
     { (Inhabited.default : EvmYul.SharedState .Yul) with
-        executionEnv :=
-          { (Inhabited.default : EvmYul.ExecutionEnv .Yul) with calldata := cd } }
+        executionEnv := ee,
+        accountMap :=
+          (Inhabited.default : EvmYul.SharedState .Yul).accountMap.insert ee.codeOwner
+            { (Inhabited.default : EvmYul.Account .Yul) with code := forsVerifierRuntime } }
   match exec fuel forsDispatcher (some forsVerifierRuntime) (.Ok ss Inhabited.default) with
   | .error (.YulHalt s _) => some (.ofNat (fromByteArrayBigEndian s.sharedState.H_return))
   | _ => none
