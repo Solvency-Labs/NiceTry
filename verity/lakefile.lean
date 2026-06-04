@@ -36,5 +36,6 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.ForsRuntime,
     `NiceTry.Fors.Bridge.EvmRun,
     `NiceTry.Fors.Bridge.AddressShape,
+    `NiceTry.Fors.Bridge.Interp,
     `NiceTry.Fors.Bridge.Refinement
   ]
