@@ -70,6 +70,29 @@ theorem exec_block_cons_err {st sts e}
     exec (n+1) .Continue co s = .ok (🔁 s) := by
   conv_lhs => rw [exec]
 
+/-! ## Expression evaluation — base cases
+
+Literals and variables are one-step. Builtin calls (`.Call (.inl prim) args`) route
+through `evalArgs` + `primCall` and get a per-builtin lemma in the follow-on file
+(`mstore`/`calldataload`/`eq`/`shr`/`add`/… each need their `primCall` semantics). -/
+
+/-- A literal evaluates to itself, state unchanged. -/
+@[simp] theorem eval_lit {val} :
+    eval (n+1) (.Lit val) co s = .ok (s, val) := by
+  conv_lhs => rw [eval]
+
+/-- A variable reads its binding from the state. -/
+@[simp] theorem eval_var {id} :
+    eval (n+1) (.Var id) co s = .ok (s, s[id]!) := by
+  conv_lhs => rw [eval]
+
+/-- Argument evaluation, empty list. -/
+@[simp] theorem evalArgs_nil :
+    evalArgs (n+1) [] co s = .ok (s, []) := by
+  conv_lhs => rw [evalArgs]
+
+/-! ## Control flow (continued) -/
+
 /-- `if`, error branch: a failing condition short-circuits. -/
 theorem exec_if_err {cond body e}
     (h : eval n cond co s = .error e) :

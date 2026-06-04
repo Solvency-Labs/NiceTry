@@ -76,10 +76,17 @@ independently-claimable workstreams:
 Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
 `fun_recover` with the right `offset/length/digest`, and that `fun_recover`'s
 `calldataload` field reads equal `raw.read16` / `decodeRaw`; bad length →
-`address(0)`.
+`address(0)` (discharges `Refinement.lean`'s `h_len` + `h_guard`).
 - Entry targets (named, not yet proved): `decodeTyped_reads_raw_header`,
   `decodeOpening_reads_raw_fields`, `rawOpenings_treeOpening_eq_decodeTyped_opening`.
 - Obligations #6, #11 in `OBLIGATIONS.md`.
+- **Foundation in place:** `Bridge/Interp.lean` has the reusable one-step `exec`
+  reductions (Block/If/Leave/Break/Continue/out-of-fuel) + `eval` base cases
+  (Lit/Var/evalArgs-nil), recipe `conv_lhs => rw [exec]` then `rw [h]`.
+  **Next brick:** per-builtin `primCall` lemmas (`mstore`, `calldataload`, `eq`,
+  `shr`, `add`, `lt`, `slt`, `gt`, `iszero`, `not`, `return`/`revert`), the
+  `Switch` selector step, and `execCall` (calling `fun_recover`) — then assemble
+  the dispatcher + `fun_recover` length/forced-zero paths into `h_len`/`h_guard`.
 
 ### WS-2 · Class-M execution wiring  — *mechanical, template exists*
 The `*_derivation_eq_overwrite` lemmas in `AddressShape.lean` assume a
@@ -99,12 +106,15 @@ prefix invariant `roots_loop_buffer_prefix_after_init` and the
 is the genuine core; the *destination* lemmas exist, the *execution → premises*
 bridge does not.
 
-### WS-4 · Assemble `RefinesModel evmRun`  — *integration; statement can be written now*
-Chain WS-1 + WS-2 + WS-3 + the proved address/roots handoffs + the forced-zero and
-length-rejection branches into a term of `RefinesModel evmRun`. Then
-`refinement_discharges_oracle evmRun` closes the whole chain to the SoLean oracle.
-Planned home: a new `Bridge/Refinement.lean` stating the reduction with the open
-WS-1/WS-3 lemmas as its only named goals (so the long pole has a typed skeleton).
+### WS-4 · Assemble `RefinesModel evmRun`  — ✅ **DONE** (`Bridge/Refinement.lean`)
+`forsRefines_of_branches` reduces `ForsRefines` to exactly three interpreter-run
+obligations — `h_len` (bad length → `address(0)`), `h_guard` (forced-zero reject →
+`address(0)`), `h_accept` (otherwise `= addressFromRoot pkSeed (recoverRoot …)`).
+All model-side glue (the `recoverRaw?` case-split + `none ↔ address(0)`) is proved;
+adds **zero trust** (`#print axioms` = `propext/Classical.choice/Quot.sound`).
+`h_len`/`h_guard` ⇐ WS-1; `h_accept` ⇐ WS-2 + WS-3 via the AddressShape handoffs.
+Remaining glue: adapt to the `Option` `RefinesModel` form for
+`refinement_discharges_oracle` → SoLean oracle.
 
 ### Finishing step (after WS-1..4)
 Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
