@@ -94,13 +94,27 @@ Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
   - `Bridge/InterpState.lean` — `primCall` for the stateful ops: `calldataload`,
     `callvalue`, `calldatasize`, `mstore`, `keccak256`, `return` (⇒ `YulHalt`),
     `revert` (⇒ `.Revert`). State-rebuilding ops use `unfold step; cases s <;> rfl`.
-  - **Next brick:** (a) the `Switch` selector step (dispatcher
-    `switch shr(224, calldataload(0))`) and `execCall` (entering `fun_recover` /
-    `constant_FORS_SIG_LEN`); (b) **`calldataload` byte semantics over
-    `encodeForsCalldata`** — i.e. `State.calldataload` of the ABI bytes = the
-    `offset`/`length`/`digest`/`read16` fields (the model-side `decodeTyped_*` lemmas
-    are already proved). Then assemble the dispatcher + `fun_recover` length /
-    forced-zero paths into `h_len` / `h_guard`.
+  - **⚠ evmRun was broken — now fixed (commit `bcc3867`).** `runForsCalldata` ran the
+    dispatcher on a state with an *empty* account map; the `recover` path calls
+    `fun_recover` via the interpreter's `call`, which does `accountMap.find? codeOwner`
+    and errors `MissingContract` **before** `codeOverride` is consulted. So `evmRun`
+    returned `0` for *every* input (h_accept/ForsRefines were false; h_len/h_guard
+    vacuous). Fix installs an account at `codeOwner` (code superseded by the override).
+    Verified: `find? codeOwner |>.isSome = true` by `rfl` post-fix. **Anyone stepping
+    the contract must use the fixed `evmRun`.**
+  - **Remaining for `h_len` (the real Class-A grind, multi-session):**
+    1. `Switch` selector step — note EVMYulLean's `Switch` *eagerly runs all 5 case
+       bodies* (`execSwitchCases`) then `foldr`-selects by matching `cond`; needs
+       case-split step lemmas (the naive match-in-conclusion form won't `rfl`-close,
+       same issue solved for `exec` in `Interp.lean`).
+    2. `execCall` into `fun_recover` (`exec_let_call_ok` + `execCall_ok` + `call` —
+       `call` now finds the contract post-fix).
+    3. **`calldataload` byte semantics over `encodeForsCalldata`**: `State.calldataload`
+       of the ABI bytes = `offset=0x40` / `length=raw.len` / `digest` / selector, and
+       `calldatasize=2548`; connects to the proved model-side `decodeTyped_*`.
+    4. Assemble the dispatcher trace + `fun_recover` length check into `h_len`.
+    `h_guard` additionally needs the **hmsg keccak bridge** (Class-M): the contract's
+    `dVal = keccak256(0,0xa0)` and `forcedZero` check (`forcedZero_eq_evm_shape`).
 
 ### WS-2 · Class-M execution wiring  — *mechanical, template exists*
 The `*_derivation_eq_overwrite` lemmas in `AddressShape.lean` assume a
