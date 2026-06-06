@@ -19,6 +19,9 @@
 - Added `ClassA.exec_dispatcher_payload_bound_if_after_length_of_sigLen`, proving
   the `raw.len = SigLen` path skips
   `if gt(add(add(offset, length), 36), calldatasize()) { revert(...) }`.
+- Added `ClassA.evalArgs_dispatcher_recover_call_after_length_of_sigLen`, reducing
+  the selected recover call arguments to
+  `[UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]` after reversal.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -27,9 +30,10 @@
   `uint256_toByteArray_roundtrip`, `uint256_toByteArray_size`). The good-length
   length-bound guard specialization uses only Lean's standard axioms. The
   good-length payload-bound guard uses `uint256_toByteArray_size` through
-  calldata size.
-- Next: reduce the `let ret := fun_recover(add(offset, 36), length,
-  calldataload(36))` call arguments in the `raw.len = SigLen` path.
+  calldata size. The recover-call argument reduction stays inside the existing
+  calldata-read trust surface.
+- Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
+  `eq(var_sig_length, 2448)` guard.
 
 ## Agent progress (2026-06-06)
 
