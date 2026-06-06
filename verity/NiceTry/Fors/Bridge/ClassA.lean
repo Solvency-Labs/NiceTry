@@ -107,6 +107,12 @@ def dispatcherLengthOffsetExpr : Expr :=
 def dispatcherLengthFromOffsetExpr : Expr :=
   .Call (Sum.inl .CALLDATALOAD) [dispatcherLengthOffsetExpr]
 
+/-- `gt(length, 0xffffffffffffffff)`, the recover case's dynamic-bytes length
+    upper-bound guard. -/
+def dispatcherLengthBoundGuardExpr : Expr :=
+  .Call (Sum.inl .GT)
+    [.Var "length", .Lit (UInt256.ofNat 0xffffffffffffffff)]
+
 /-- `gt(offset, 0xffffffffffffffff)`, the recover case's ABI offset upper-bound
     guard. -/
 def dispatcherOffsetBoundGuardExpr : Expr :=
@@ -180,6 +186,11 @@ private theorem uint256_slt_min_calldata_guard :
 
 private theorem uint256_gt_offset_bound :
     UInt256.gt (UInt256.ofNat 0x40) (UInt256.ofNat 0xffffffffffffffff) =
+      UInt256.ofNat 0 := by
+  rfl
+
+private theorem uint256_gt_sigLen_bound :
+    UInt256.gt (UInt256.ofNat SigLen) (UInt256.ofNat 0xffffffffffffffff) =
       UInt256.ofNat 0 := by
   rfl
 
@@ -759,6 +770,68 @@ theorem exec_dispatcher_let_length_after_offset
       simpa [hload] using
         (primCall_calldataload (n := 7) s (UInt256.ofNat 0x44)))]
   cases s <;> rfl
+
+theorem eval_dispatcher_length_bound_guard_after_length
+    (raw : RawSig) (digest : Digest)
+    (hbound :
+      UInt256.gt (UInt256.ofNat raw.len) (UInt256.ofNat 0xffffffffffffffff) =
+        UInt256.ofNat 0) :
+    eval 6 dispatcherLengthBoundGuardExpr (some forsVerifierRuntime)
+        (dispatcherAfterLength raw
+          (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) =
+      .ok (dispatcherAfterLength raw
+          (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))),
+        UInt256.ofNat 0) := by
+  let s := dispatcherAfterLength raw
+    (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
+  have hlookup :
+      EvmYul.Yul.State.lookup! "length" s = UInt256.ofNat raw.len := by
+    dsimp [s]
+    exact dispatcherAfterLength_lookup_length_after_offset raw digest
+  change eval 6
+      (.Call (Sum.inl .GT)
+        [.Var "length", .Lit (UInt256.ofNat 0xffffffffffffffff)])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0)
+  have hgt := eval_binop2 (n := 0) (co := some forsVerifierRuntime) (OP := .GT)
+      (f := UInt256.gt)
+      (primCall_gt (n := 4) (s := s)
+        (EvmYul.Yul.State.lookup! "length" s)
+        (UInt256.ofNat 0xffffffffffffffff))
+      (eval_var (n := 1) (co := some forsVerifierRuntime) (s := s) (id := "length"))
+      (eval_lit (n := 3) (co := some forsVerifierRuntime) (s := s)
+        (val := UInt256.ofNat 0xffffffffffffffff))
+  simpa [dispatcherLengthBoundGuardExpr, hlookup, hbound] using hgt
+
+theorem exec_dispatcher_length_bound_if_after_length
+    (raw : RawSig) (digest : Digest) (body : List Stmt)
+    (hbound :
+      UInt256.gt (UInt256.ofNat raw.len) (UInt256.ofNat 0xffffffffffffffff) =
+        UInt256.ofNat 0) :
+    exec 7 (.If dispatcherLengthBoundGuardExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterLength raw
+          (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) =
+      .ok (dispatcherAfterLength raw
+        (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) := by
+  exact exec_if_false
+    (n := 6) (co := some forsVerifierRuntime)
+    (s := dispatcherAfterLength raw
+      (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))))
+    (cond := dispatcherLengthBoundGuardExpr) (body := body)
+    (s' := dispatcherAfterLength raw
+      (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))))
+    (eval_dispatcher_length_bound_guard_after_length raw digest hbound)
+
+theorem exec_dispatcher_length_bound_if_after_length_of_sigLen
+    (raw : RawSig) (digest : Digest) (body : List Stmt)
+    (hlen : raw.len = SigLen) :
+    exec 7 (.If dispatcherLengthBoundGuardExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterLength raw
+          (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) =
+      .ok (dispatcherAfterLength raw
+        (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) := by
+  apply exec_dispatcher_length_bound_if_after_length
+  rw [hlen]
+  exact uint256_gt_sigLen_bound
 
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide

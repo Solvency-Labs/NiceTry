@@ -12,14 +12,20 @@
 - Added `ClassA.exec_dispatcher_let_length_after_offset`, binding
   `length := calldataload(add(4, offset))` to `UInt256.ofNat raw.len` in the
   selected recover case.
+- Added `ClassA.exec_dispatcher_length_bound_if_after_length`, a reusable
+  conditional skip for `if gt(length, 0xffffffffffffffff) { revert(...) }`, plus
+  the `raw.len = SigLen` specialization
+  `exec_dispatcher_length_bound_if_after_length_of_sigLen`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
   `encodeForsCalldata_size`. The length binding stays inside the existing
   calldata-read trust surface (`ffi_zeroes_eq_empty`,
-  `uint256_toByteArray_roundtrip`, `uint256_toByteArray_size`).
-- Next: skip `if gt(length, 0xffffffffffffffff) { revert(...) }` and continue the
-  selected recover dispatcher trace toward the dynamic-bytes payload bound.
+  `uint256_toByteArray_roundtrip`, `uint256_toByteArray_size`). The good-length
+  length-bound guard specialization uses only Lean's standard axioms.
+- Next: prove the dynamic-bytes payload bound guard
+  `if gt(add(add(offset, length), 36), calldatasize()) { revert(...) }` in the
+  `raw.len = SigLen` path.
 
 ## Agent progress (2026-06-06)
 
