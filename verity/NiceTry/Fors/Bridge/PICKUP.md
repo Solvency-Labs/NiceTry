@@ -47,6 +47,8 @@
 - Added `ClassA.dispatcherAfterFreeMemPtr_*` preservation lemmas and
   `eval_dispatcher_has_selector_guard_after_free_mem_ptr`, so the first `if`
   guard is available after the initial `mstore` step.
+- Added `ClassA.exec_dispatcher_has_selector_if_after_free_mem_ptr`, which steps
+  the first dispatcher `if` into its body after the initial memory-pointer write.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.

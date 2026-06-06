@@ -329,4 +329,22 @@ theorem eval_dispatcher_has_selector_guard_after_free_mem_ptr
   rw [dispatcherAfterFreeMemPtr_executionEnv]
   exact forsInitialState_calldata_size raw digest
 
+private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
+  decide
+
+theorem exec_dispatcher_has_selector_if_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 9 (.If dispatcherHasSelectorGuardExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      exec 8 (.Block body) (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) := by
+  exact exec_if_true
+    (n := 8) (co := some forsVerifierRuntime)
+    (s := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (cond := dispatcherHasSelectorGuardExpr) (body := body)
+    (s' := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (c := UInt256.ofNat 1)
+    (eval_dispatcher_has_selector_guard_after_free_mem_ptr raw digest)
+    uint256_one_ne_zero
+
 end NiceTry.Fors.Bridge
