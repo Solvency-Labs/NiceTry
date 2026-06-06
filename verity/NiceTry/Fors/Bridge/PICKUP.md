@@ -33,6 +33,11 @@
   composition lemmas for state-threading builtins (`mload` and `keccak256`).
 - Added `InterpEval.eval_nullop0`, the expression composition lemma for
   zero-argument builtins (`calldatasize`, `callvalue`).
+- Added `Bridge/ClassA.lean` and registered it in `lakefile.lean`. Current
+  Class-A facts: encoded-call initial state, `runForsCalldata` unfolding,
+  dispatcher selector / calldata-size / callvalue / offset / digest / length-word
+  expression evaluations, and the bounded `length word = SigLen ↔ raw.len = SigLen`
+  handoff.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.
@@ -40,7 +45,8 @@
   facts: only `ffi_zeroes_eq_empty`, `uint256_toByteArray_size`, and
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms. Axiom audit for
   `primCall_mload`, `eval_nullop0`, `eval_unop1_thread`, and
-  `eval_binop2_thread`: only Lean's standard axioms.
+  `eval_binop2_thread`: only Lean's standard axioms. Axiom audit for the new
+  `ClassA` dispatcher word facts stays inside the same calldata trust surface.
 - Next: prove the dispatcher length trace under `RawSigLenFitsEvmWord raw` using
   `rawLen_word_eq_sigLen_iff_of_lt`; independent raw-field payload reads can
   proceed meanwhile.
