@@ -52,6 +52,9 @@
 - Generalized `eval_dispatcher_selector` to `eval_dispatcher_selector_of_calldata`
   and added `eval_dispatcher_selector_after_free_mem_ptr`, so the selector switch
   scrutinee is available after the initial `mstore`.
+- Generalized dispatcher offset/digest/length word evaluations to `_of_calldata`
+  forms and added their post-`mstore` specializations for the selected recover
+  case trace.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.

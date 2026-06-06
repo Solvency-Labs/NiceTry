@@ -213,56 +213,74 @@ theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
   eval_dispatcher_selector_of_calldata raw digest (forsInitialState raw digest)
     (some forsVerifierRuntime) (forsInitialState_toState_calldata raw digest)
 
-theorem eval_dispatcher_offset (raw : RawSig) (digest : Digest) :
-    eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
-        (forsInitialState raw digest) =
-      .ok (forsInitialState raw digest, UInt256.ofNat 0x40) := by
-  let s := forsInitialState raw digest
-  have hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest := by
-    simp [s, forsInitialState_toState_calldata raw digest]
+theorem eval_dispatcher_offset_of_calldata
+    (raw : RawSig) (digest : Digest) (s : EvmYul.Yul.State)
+    (co : Option YulContract)
+    (hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest) :
+    eval 4 dispatcherOffsetExpr co s =
+      .ok (s, UInt256.ofNat 0x40) := by
   have hoff :
       EvmYul.State.calldataload s.toState (UInt256.ofNat 4) = UInt256.ofNat 0x40 :=
     calldataload_encode_offset raw digest s.toState hcd
   change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 4)])
-      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0x40)
-  have h := eval_unop1_thread (n := 0) (co := some forsVerifierRuntime)
+      co s = .ok (s, UInt256.ofNat 0x40)
+  have h := eval_unop1_thread (n := 0) (co := co)
       (primCall_calldataload s (UInt256.ofNat 4)) eval_lit
   rw [hoff] at h
+  exact h
+
+theorem eval_dispatcher_offset (raw : RawSig) (digest : Digest) :
+    eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
+        (forsInitialState raw digest) =
+      .ok (forsInitialState raw digest, UInt256.ofNat 0x40) :=
+  eval_dispatcher_offset_of_calldata raw digest (forsInitialState raw digest)
+    (some forsVerifierRuntime) (forsInitialState_toState_calldata raw digest)
+
+theorem eval_dispatcher_digest_of_calldata
+    (raw : RawSig) (digest : Digest) (s : EvmYul.Yul.State)
+    (co : Option YulContract)
+    (hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest) :
+    eval 4 dispatcherDigestExpr co s =
+      .ok (s, UInt256.ofNat digest) := by
+  have hdigest :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 36) = UInt256.ofNat digest :=
+    calldataload_encode_digest raw digest s.toState hcd
+  change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 36)])
+      co s = .ok (s, UInt256.ofNat digest)
+  have h := eval_unop1_thread (n := 0) (co := co)
+      (primCall_calldataload s (UInt256.ofNat 36)) eval_lit
+  rw [hdigest] at h
   exact h
 
 theorem eval_dispatcher_digest (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherDigestExpr (some forsVerifierRuntime)
         (forsInitialState raw digest) =
-      .ok (forsInitialState raw digest, UInt256.ofNat digest) := by
-  let s := forsInitialState raw digest
-  have hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest := by
-    simp [s, forsInitialState_toState_calldata raw digest]
-  have hdigest :
-      EvmYul.State.calldataload s.toState (UInt256.ofNat 36) = UInt256.ofNat digest :=
-    calldataload_encode_digest raw digest s.toState hcd
-  change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 36)])
-      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat digest)
-  have h := eval_unop1_thread (n := 0) (co := some forsVerifierRuntime)
-      (primCall_calldataload s (UInt256.ofNat 36)) eval_lit
-  rw [hdigest] at h
+      .ok (forsInitialState raw digest, UInt256.ofNat digest) :=
+  eval_dispatcher_digest_of_calldata raw digest (forsInitialState raw digest)
+    (some forsVerifierRuntime) (forsInitialState_toState_calldata raw digest)
+
+theorem eval_dispatcher_length_word_of_calldata
+    (raw : RawSig) (digest : Digest) (s : EvmYul.Yul.State)
+    (co : Option YulContract)
+    (hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest) :
+    eval 4 dispatcherLengthWordExpr co s =
+      .ok (s, UInt256.ofNat raw.len) := by
+  have hlen :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 0x44) = UInt256.ofNat raw.len :=
+    calldataload_encode_length raw digest s.toState hcd
+  change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0x44)])
+      co s = .ok (s, UInt256.ofNat raw.len)
+  have h := eval_unop1_thread (n := 0) (co := co)
+      (primCall_calldataload s (UInt256.ofNat 0x44)) eval_lit
+  rw [hlen] at h
   exact h
 
 theorem eval_dispatcher_length_word (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherLengthWordExpr (some forsVerifierRuntime)
         (forsInitialState raw digest) =
-      .ok (forsInitialState raw digest, UInt256.ofNat raw.len) := by
-  let s := forsInitialState raw digest
-  have hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest := by
-    simp [s, forsInitialState_toState_calldata raw digest]
-  have hlen :
-      EvmYul.State.calldataload s.toState (UInt256.ofNat 0x44) = UInt256.ofNat raw.len :=
-    calldataload_encode_length raw digest s.toState hcd
-  change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0x44)])
-      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat raw.len)
-  have h := eval_unop1_thread (n := 0) (co := some forsVerifierRuntime)
-      (primCall_calldataload s (UInt256.ofNat 0x44)) eval_lit
-  rw [hlen] at h
-  exact h
+      .ok (forsInitialState raw digest, UInt256.ofNat raw.len) :=
+  eval_dispatcher_length_word_of_calldata raw digest (forsInitialState raw digest)
+    (some forsVerifierRuntime) (forsInitialState_toState_calldata raw digest)
 
 theorem dispatcher_length_word_eq_sigLen_iff (raw : RawSig) (digest : Digest)
     (hbound : RawSigLenFitsEvmWord raw) :
@@ -342,6 +360,33 @@ theorem eval_dispatcher_selector_after_free_mem_ptr
       .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest),
         UInt256.ofNat 0x1aad75c5) := by
   apply eval_dispatcher_selector_of_calldata
+  rw [dispatcherAfterFreeMemPtr_toState]
+  exact forsInitialState_toState_calldata raw digest
+
+theorem eval_dispatcher_offset_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat 0x40) := by
+  apply eval_dispatcher_offset_of_calldata
+  rw [dispatcherAfterFreeMemPtr_toState]
+  exact forsInitialState_toState_calldata raw digest
+
+theorem eval_dispatcher_digest_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 4 dispatcherDigestExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat digest) := by
+  apply eval_dispatcher_digest_of_calldata
+  rw [dispatcherAfterFreeMemPtr_toState]
+  exact forsInitialState_toState_calldata raw digest
+
+theorem eval_dispatcher_length_word_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 4 dispatcherLengthWordExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat raw.len) := by
+  apply eval_dispatcher_length_word_of_calldata
   rw [dispatcherAfterFreeMemPtr_toState]
   exact forsInitialState_toState_calldata raw digest
 
