@@ -1074,6 +1074,33 @@ theorem evalArgs_dispatcher_recover_call_after_length_of_sigLen
     List.cons_append]
   rfl
 
+theorem exec_dispatcher_let_recover_call_args_after_length_of_sigLen
+    (raw : RawSig) (digest : Digest) (hlen : raw.len = SigLen) :
+    exec 13 (.Let ["ret"] (.some dispatcherRecoverCallExpr)) (some forsVerifierRuntime)
+        (dispatcherAfterLength raw
+          (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) =
+      execCall 12 "fun_recover" ["ret"] (some forsVerifierRuntime)
+        (.ok (dispatcherAfterLength raw
+            (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))),
+          [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest])) := by
+  let s := dispatcherAfterLength raw
+    (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
+  change exec 13
+      (.Let ["ret"] (.some
+        (.Call (Sum.inr "fun_recover")
+          [dispatcherSigDataOffsetExpr, .Var "length", dispatcherDigestExpr])))
+      (some forsVerifierRuntime) s =
+    execCall 12 "fun_recover" ["ret"] (some forsVerifierRuntime)
+      (.ok (s, [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]))
+  rw [exec_let_call (n := 12)]
+  change execCall 12 "fun_recover" ["ret"] (some forsVerifierRuntime)
+      (reverse' (evalArgs 12
+        [dispatcherDigestExpr, .Var "length", dispatcherSigDataOffsetExpr]
+        (some forsVerifierRuntime) s)) =
+    execCall 12 "fun_recover" ["ret"] (some forsVerifierRuntime)
+      (.ok (s, [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]))
+  rw [evalArgs_dispatcher_recover_call_after_length_of_sigLen raw digest hlen]
+
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide
 
