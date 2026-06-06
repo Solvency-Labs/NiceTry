@@ -6,11 +6,15 @@
   `exec_dispatcher_offset_bound_if_after_offset`, proving the selected recover
   case skips `if gt(offset, 0xffffffffffffffff) { revert(...) }` after
   `offset := calldataload(4)`.
-- Verified `lake build NiceTry` green. Axiom audit for the new offset-bound
-  guard step is only Lean's standard axioms (`propext`, `Classical.choice`,
-  `Quot.sound`).
-- Next: bind `value := calldataload(36)` and continue the selected recover
-  dispatcher trace toward the dynamic-bytes length check.
+- Added `ClassA.eval_dispatcher_offset_min_calldata_guard_after_offset` and
+  `exec_dispatcher_offset_min_calldata_if_after_offset`, proving encoded calldata
+  skips `if iszero(slt(add(offset, 35), calldatasize())) { revert(...) }`.
+- Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
+  is only Lean's standard axioms; the calldata-size guard step additionally uses
+  the existing `uint256_toByteArray_size` codec axiom through
+  `encodeForsCalldata_size`.
+- Next: bind `length := calldataload(add(4, offset))` and continue the selected
+  recover dispatcher trace toward the dynamic-bytes length check.
 
 ## Agent progress (2026-06-06)
 
