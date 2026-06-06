@@ -372,6 +372,18 @@ theorem eval_dispatcher_callvalue_after_free_mem_ptr
   rw [dispatcherAfterFreeMemPtr_executionEnv]
   exact forsInitialState_callvalue raw digest
 
+theorem exec_dispatcher_callvalue_if_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 3 (.If dispatcherCallvalueExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) := by
+  exact exec_if_false
+    (n := 2) (co := some forsVerifierRuntime)
+    (s := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (cond := dispatcherCallvalueExpr) (body := body)
+    (s' := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (eval_dispatcher_callvalue_after_free_mem_ptr raw digest)
+
 theorem eval_dispatcher_offset_after_free_mem_ptr
     (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
