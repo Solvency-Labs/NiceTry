@@ -590,6 +590,10 @@ def recoverEntryState (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
   👌 (dispatcherBeforeRecoverState raw digest).initcall
     forsFunRecover.params (recoverGoodArgs digest)
 
+/-- State after `fun_recover`'s first statement, `var := 0`. -/
+def recoverAfterVarInit (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverEntryState raw digest).insert "var" (UInt256.ofNat 0)
+
 theorem dispatcherAfterLength_executionEnv (raw : RawSig) (s : EvmYul.Yul.State) :
     (dispatcherAfterLength raw s).executionEnv = s.executionEnv := by
   cases s <;> rfl
@@ -690,6 +694,21 @@ theorem dispatcherBeforeRecoverState_account_find
 
 theorem forsVerifierRuntime_lookup_fun_recover :
     forsVerifierRuntime.functions.lookup "fun_recover" = some forsFunRecover := by
+  rfl
+
+theorem recoverEntryState_lookup_sig_offset (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_sig_offset" (recoverEntryState raw digest) =
+      UInt256.ofNat 100 := by
+  rfl
+
+theorem recoverEntryState_lookup_sig_length (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_sig_length" (recoverEntryState raw digest) =
+      UInt256.ofNat SigLen := by
+  rfl
+
+theorem recoverEntryState_lookup_digest (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_digest" (recoverEntryState raw digest) =
+      UInt256.ofNat digest := by
   rfl
 
 theorem eval_dispatcher_offset_bound_guard_after_offset
@@ -1127,6 +1146,16 @@ theorem exec_dispatcher_let_recover_call_args_after_length_of_sigLen
     execCall 12 "fun_recover" ["ret"] (some forsVerifierRuntime)
       (.ok (s, [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]))
   rw [evalArgs_dispatcher_recover_call_after_length_of_sigLen raw digest hlen]
+
+theorem exec_recover_var_init
+    (raw : RawSig) (digest : Digest) :
+    exec 2 (.Let ["var"] (.some (.Lit (UInt256.ofNat 0)))) (some forsVerifierRuntime)
+        (recoverEntryState raw digest) =
+      .ok (recoverAfterVarInit raw digest) := by
+  simpa [recoverAfterVarInit] using
+    (exec_let_lit (n := 1) (co := some forsVerifierRuntime)
+      (s := recoverEntryState raw digest)
+      (vars := ["var"]) (lit := UInt256.ofNat 0))
 
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide

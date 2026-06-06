@@ -32,6 +32,10 @@
 - Added `Interp.exec_let_lit` and `Interp.exec_let_var`, the simple statement
   reducers needed to start stepping `fun_recover`'s literal and variable
   assignments.
+- Added `ClassA.recoverEntryState_lookup_sig_offset`,
+  `recoverEntryState_lookup_sig_length`, `recoverEntryState_lookup_digest`, and
+  `exec_recover_var_init`, establishing the good `fun_recover` entry parameters
+  and stepping its first body statement `var := 0`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -44,6 +48,8 @@
   calldata-read trust surface; so does the statement-level `execCall` handoff.
   The new `call_ok` side conditions use only Lean's standard axioms.
   `exec_let_lit` and `exec_let_var` also use only Lean's standard axioms.
+  The new `recoverEntryState_*` facts and `exec_recover_var_init` use only Lean's
+  standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
