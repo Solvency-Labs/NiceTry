@@ -106,6 +106,24 @@ theorem eval_dispatcher_callvalue (raw : RawSig) (digest : Digest) :
     using eval_nullop0 (n := 0) (co := some forsVerifierRuntime)
       (primCall_callvalue (n := 0) (forsInitialState raw digest))
 
+theorem eval_dispatcher_calldatasize_of_size
+    (s : EvmYul.Yul.State) (co : Option YulContract)
+    (hsize : s.executionEnv.calldata.size = 2548) :
+    eval 2 dispatcherCalldataSizeExpr co s =
+      .ok (s, UInt256.ofNat 2548) := by
+  simpa [dispatcherCalldataSizeExpr, hsize]
+    using eval_nullop0 (n := 0) (co := co)
+      (primCall_calldatasize (n := 0) s)
+
+theorem eval_dispatcher_callvalue_of_zero
+    (s : EvmYul.Yul.State) (co : Option YulContract)
+    (hvalue : s.executionEnv.weiValue = UInt256.ofNat 0) :
+    eval 2 dispatcherCallvalueExpr co s =
+      .ok (s, UInt256.ofNat 0) := by
+  simpa [dispatcherCallvalueExpr, hvalue]
+    using eval_nullop0 (n := 0) (co := co)
+      (primCall_callvalue (n := 0) s)
+
 private theorem uint256_lt_2548_4 :
     UInt256.lt (UInt256.ofNat 2548) (UInt256.ofNat 4) = UInt256.ofNat 0 := by
   rfl
@@ -114,30 +132,38 @@ private theorem uint256_isZero_zero :
     (UInt256.ofNat 0).isZero = UInt256.ofNat 1 := by
   rfl
 
-theorem eval_dispatcher_has_selector_guard (raw : RawSig) (digest : Digest) :
-    eval 8 dispatcherHasSelectorGuardExpr (some forsVerifierRuntime)
-        (forsInitialState raw digest) =
-      .ok (forsInitialState raw digest, UInt256.ofNat 1) := by
-  let s := forsInitialState raw digest
-  have hsize : eval 2 dispatcherCalldataSizeExpr (some forsVerifierRuntime) s =
+theorem eval_dispatcher_has_selector_guard_of_size
+    (s : EvmYul.Yul.State) (co : Option YulContract)
+    (hsize' : s.executionEnv.calldata.size = 2548) :
+    eval 8 dispatcherHasSelectorGuardExpr co s =
+      .ok (s, UInt256.ofNat 1) := by
+  have hsize : eval 2 dispatcherCalldataSizeExpr co s =
       .ok (s, UInt256.ofNat 2548) :=
-    eval_dispatcher_calldatasize raw digest
+    eval_dispatcher_calldatasize_of_size s co hsize'
   have hlt : eval 6 (.Call (Sum.inl .LT)
         [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)])
-        (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0) := by
+        co s = .ok (s, UInt256.ofNat 0) := by
     simpa [uint256_lt_2548_4] using
-      (eval_binop2 (n := 0) (co := some forsVerifierRuntime) (OP := .LT)
+      (eval_binop2 (n := 0) (co := co) (OP := .LT)
         (f := UInt256.lt)
         (primCall_lt (n := 4) (s := s) (UInt256.ofNat 2548) (UInt256.ofNat 4))
         hsize eval_lit)
   change eval 8
       (.Call (Sum.inl .ISZERO)
         [.Call (Sum.inl .LT) [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)]])
-      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 1)
+      co s = .ok (s, UInt256.ofNat 1)
   simpa [uint256_isZero_zero] using
-    (eval_unop1 (n := 4) (co := some forsVerifierRuntime) (OP := .ISZERO)
+    (eval_unop1 (n := 4) (co := co) (OP := .ISZERO)
       (f := UInt256.isZero)
       (primCall_iszero (n := 6) (s := s) (UInt256.ofNat 0)) hlt)
+
+theorem eval_dispatcher_has_selector_guard (raw : RawSig) (digest : Digest) :
+    eval 8 dispatcherHasSelectorGuardExpr (some forsVerifierRuntime)
+        (forsInitialState raw digest) =
+      .ok (forsInitialState raw digest, UInt256.ofNat 1) :=
+  eval_dispatcher_has_selector_guard_of_size
+    (forsInitialState raw digest) (some forsVerifierRuntime)
+    (forsInitialState_calldata_size raw digest)
 
 theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
     eval 6 dispatcherSelectorExpr (some forsVerifierRuntime)
@@ -252,6 +278,14 @@ def dispatcherFreeMemPtrStmt : Stmt :=
 def dispatcherAfterFreeMemPtr (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
   s.setMachineState (s.toMachineState.mstore (UInt256.ofNat 64) (UInt256.ofNat 0x80))
 
+theorem dispatcherAfterFreeMemPtr_toState (s : EvmYul.Yul.State) :
+    (dispatcherAfterFreeMemPtr s).toState = s.toState := by
+  cases s <;> rfl
+
+theorem dispatcherAfterFreeMemPtr_executionEnv (s : EvmYul.Yul.State) :
+    (dispatcherAfterFreeMemPtr s).executionEnv = s.executionEnv := by
+  cases s <;> rfl
+
 theorem exec_dispatcher_free_mem_ptr
     (s : EvmYul.Yul.State) (co : Option YulContract) :
     exec 7 dispatcherFreeMemPtrStmt co s =
@@ -285,5 +319,14 @@ theorem exec_dispatcher_free_mem_ptr
       simpa [dispatcherAfterFreeMemPtr] using
         (primCall_mstore (n := 5) s (UInt256.ofNat 64) (UInt256.ofNat 0x80)))]
   cases dispatcherAfterFreeMemPtr s <;> rfl
+
+theorem eval_dispatcher_has_selector_guard_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 8 dispatcherHasSelectorGuardExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat 1) := by
+  apply eval_dispatcher_has_selector_guard_of_size
+  rw [dispatcherAfterFreeMemPtr_executionEnv]
+  exact forsInitialState_calldata_size raw digest
 
 end NiceTry.Fors.Bridge

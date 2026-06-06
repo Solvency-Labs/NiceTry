@@ -44,6 +44,9 @@
   `length word = SigLen ↔ raw.len = SigLen` handoff.
 - Added `ClassA.exec_dispatcher_free_mem_ptr`, the first concrete dispatcher
   statement step for `mstore(64,0x80)` with its named post-state.
+- Added `ClassA.dispatcherAfterFreeMemPtr_*` preservation lemmas and
+  `eval_dispatcher_has_selector_guard_after_free_mem_ptr`, so the first `if`
+  guard is available after the initial `mstore` step.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.
@@ -52,9 +55,9 @@
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms. Axiom audit for
   `primCall_mload`, `eval_nullop0`, `eval_unop1_thread`, and
   `eval_binop2_thread`, plus the primitive statement reducers: only Lean's
-  standard axioms. `ClassA.exec_dispatcher_free_mem_ptr` also uses only Lean's
-  standard axioms. Axiom audit for the new `ClassA` dispatcher word facts stays
-  inside the same calldata trust surface.
+  standard axioms. `ClassA.exec_dispatcher_free_mem_ptr` and the post-`mstore`
+  preservation lemmas also use only Lean's standard axioms. Axiom audit for the
+  new `ClassA` dispatcher word facts stays inside the same calldata trust surface.
 - Next: prove the dispatcher length trace under `RawSigLenFitsEvmWord raw` using
   `rawLen_word_eq_sigLen_iff_of_lt`; independent raw-field payload reads can
   proceed meanwhile.
