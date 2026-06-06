@@ -104,6 +104,24 @@ theorem rawLen_collision_bad_length : SigLen + UInt256.size ≠ SigLen := by
   unfold UInt256.size
   omega
 
+theorem uint256_ofNat_inj_of_lt {a b : Nat}
+    (ha : a < UInt256.size) (hb : b < UInt256.size)
+    (h : UInt256.ofNat a = UInt256.ofNat b) :
+    a = b := by
+  have ht := congrArg UInt256.toNat h
+  rw [uint256_ofNat_toNat_of_lt a ha, uint256_ofNat_toNat_of_lt b hb] at ht
+  exact ht
+
+theorem rawLen_word_eq_sigLen_iff_of_lt (raw : RawSig)
+    (hlen : raw.len < UInt256.size) :
+    UInt256.ofNat raw.len = UInt256.ofNat SigLen ↔ raw.len = SigLen := by
+  constructor
+  · intro h
+    exact uint256_ofNat_inj_of_lt hlen (by norm_num [UInt256.size, SigLen, RLen,
+      PkSeedLen, SectionLen, RealTrees, K, TreeLen, A, CounterLen]) h
+  · intro h
+    rw [h]
+
 theorem readBytes_window_32 (source : ByteArray) (start : Nat)
     (hstart : start < 2 ^ 64)
     (hbound : start + 32 ≤ source.size) :

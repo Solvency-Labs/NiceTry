@@ -19,6 +19,11 @@
   Therefore the current unbounded bad-length implication cannot be discharged
   from the EVM length word alone; it needs a `raw.len < 2^256`/real-byte-length
   invariant or an adjusted spine statement.
+- Added the bounded bridge lemma the dispatcher trace can use once that invariant
+  exists:
+  `rawLen_word_eq_sigLen_iff_of_lt :
+    raw.len < UInt256.size →
+    (UInt256.ofNat raw.len = UInt256.ofNat SigLen ↔ raw.len = SigLen)`.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.
@@ -26,8 +31,9 @@
   facts: only `ffi_zeroes_eq_empty`, `uint256_toByteArray_size`, and
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms.
 - Next: either add the missing `RawSig.len` bound/invariant to the spine, or prove
-  the dispatcher trace under that precondition; independent raw-field payload
-  reads can proceed meanwhile.
+  the dispatcher trace under that precondition using
+  `rawLen_word_eq_sigLen_iff_of_lt`; independent raw-field payload reads can
+  proceed meanwhile.
 
 This is the entry point for anyone picking up the `ForsVerifier.sol` ⊑ Lean-model
 proof. It says **where the work lives, what's already done, and exactly what to
