@@ -52,4 +52,13 @@ dependency (can't patch in place). Tracked as trust ONLY until an upstream PR to
 encoding, not a cryptographic assumption. -/
 axiom uint256_toByteArray_size (v : UInt256) : (UInt256.toByteArray v).size = 32
 
+/-- Big-endian word encoding is a left inverse for EVM word decoding.
+
+Like `uint256_toByteArray_size`, this is provable from EVMYulLean's private
+`fromBytes'_toBytes'` and `toBytes'_UInt256_le` lemmas but cannot be referenced
+from this project while EVMYulLean is consumed as a dependency. It is a byte-word
+codec fact, not a cryptographic assumption. -/
+axiom uint256_toByteArray_roundtrip (v : UInt256) :
+    EvmYul.uInt256OfByteArray v.toByteArray = v
+
 end NiceTry.Fors.Bridge

@@ -1,5 +1,19 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Agent progress (2026-06-06)
+
+- Added `Bridge/CalldataBytes.lean` and registered it in `lakefile.lean`.
+  Current facts proved: `word32` size/round-trip wrappers, selector size,
+  `forsPayload` size (`2448`), and `encodeForsCalldata` size (`2548`).
+- Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
+  `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
+  `uInt256OfByteArray v.toByteArray = v`.
+- Verified `lake build NiceTry` green. Axiom audit for the new facts:
+  `encodeForsCalldata_size` depends on `uint256_toByteArray_size`;
+  `word32_uInt256_roundtrip` depends on `uint256_toByteArray_roundtrip`.
+- Next: prove `ByteArray.readBytes` in-bounds window lemmas over the ABI append
+  shape, then the concrete `calldataload` equalities (`4`, `0x44`, `36`, selector).
+
 This is the entry point for anyone picking up the `ForsVerifier.sol` ⊑ Lean-model
 proof. It says **where the work lives, what's already done, and exactly what to
 grab next**. Deep technical detail is in [`OBLIGATIONS.md`](./OBLIGATIONS.md) (the
@@ -43,7 +57,8 @@ Dependencies are pinned in `lakefile.lean` (`verity@bd211c5`, which pulls
 ## 2. What is DONE — do not redo this
 
 All of the following is committed on `evmrun-runtime`, **`sorry`/`admit`-free**,
-with trust localized to **9 labeled axioms** (verify with `#print axioms`):
+with trust localized to **10 labeled axioms** on this branch (verify with
+`#print axioms`):
 
 | Area | File | Status |
 |---|---|---|
@@ -54,12 +69,14 @@ with trust localized to **9 labeled axioms** (verify with `#print axioms`):
 | Per-keccak shape equivalences (Class M) | `Bridge/AddressShape.lean` | ✅ address / hmsg / leaf / node (`climbLevel` even+odd) / roots |
 | Roots → `recoverRoot` handoff skeleton | `Bridge/AddressShape.lean` | ✅ `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init` |
 | Memory layout / non-overlap (Class C side-conditions) | `Bridge/MemoryLayout.lean` | ✅ the three `_GUARD`s |
-| Trusted FFI specs (memory padding + keccak) | `Bridge/EvmFfiSpec.lean` | ✅ 4 axioms (3 `ffi_zeroes_*` + `uint256_toByteArray_size`) |
+| Trusted FFI specs (memory padding + keccak) | `Bridge/EvmFfiSpec.lean` | ✅ 5 axioms (3 `ffi_zeroes_*` + `uint256_toByteArray_size` + `uint256_toByteArray_roundtrip`) |
 | SoLean oracle discharge + sufficiency | `Bridge/Oracle.lean`, `Bridge/Equivalence.lean` | ✅ `refinement_discharges_oracle`, `refinement_matches_forsAccept` |
 
-**The 9 trust-base axioms:** `evm_keccak_{address,hmsg,leaf,node,roots}`
+**The 10 trust-base axioms on this branch:** `evm_keccak_{address,hmsg,leaf,node,roots}`
 (`AddressShape.lean`) + `ffi_zeroes_{size,get!,eq_empty}` + `uint256_toByteArray_size`
-(`EvmFfiSpec.lean`). See `TRUST_SURFACE` for why each is acceptable.
+and `uint256_toByteArray_roundtrip` (`EvmFfiSpec.lean`). The round-trip axiom is
+the Class-A codec fact planned in WS-1; it mirrors EVMYulLean's private
+`fromBytes'_toBytes'` proof.
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
 > The contract-execution spine connecting those steps is **not yet assembled**.
