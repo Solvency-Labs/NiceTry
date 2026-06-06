@@ -44,7 +44,7 @@ open NiceTry.Fors
 def word32 (n : Nat) : ByteArray := (UInt256.ofNat n).toByteArray
 
 /-- The `recover(bytes,bytes32)` selector as its 4 leading bytes. -/
-def forsSelector : ByteArray := (word32 0x1aad75c5).extract 28 32
+def forsSelector : ByteArray := ⟨#[0x1a, 0xad, 0x75, 0xc5]⟩
 
 /-- The 2448-byte signature payload, reconstructed from `read16` at each 16-byte
     chunk (153 chunks × 16 = 2448). -/

@@ -8,14 +8,15 @@
 - Extended `Bridge/CalldataBytes.lean` with `readBytes_window_32` and concrete
   ABI word reads for `calldataload(4) = 0x40`, `calldataload(36) = digest`, and
   `calldataload(0x44) = raw.len`.
+- Switched `forsSelector` to the literal ABI bytes and proved
+  `shr 224 (calldataload(0)) = 0x1aad75c5` for encoded FORS calldata.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.
 - Verified `lake build NiceTry` green. Axiom audit for the new `calldataload`
   facts: only `ffi_zeroes_eq_empty`, `uint256_toByteArray_size`, and
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms.
-- Next: prove selector extraction (`shr 224 (calldataload 0) = 0x1aad75c5`),
-  then start threading these facts into the dispatcher length trace.
+- Next: thread these calldata facts into the dispatcher length trace.
 
 This is the entry point for anyone picking up the `ForsVerifier.sol` ⊑ Lean-model
 proof. It says **where the work lives, what's already done, and exactly what to
