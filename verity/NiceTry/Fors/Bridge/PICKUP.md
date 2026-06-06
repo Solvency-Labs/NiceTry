@@ -36,8 +36,9 @@
 - Added `Bridge/ClassA.lean` and registered it in `lakefile.lean`. Current
   Class-A facts: encoded-call initial state, `runForsCalldata` unfolding,
   dispatcher selector / calldata-size / callvalue / offset / digest / length-word
-  expression evaluations, and the bounded `length word = SigLen ↔ raw.len = SigLen`
-  handoff.
+  expression evaluations, the first dispatcher guard
+  `iszero(lt(calldatasize(),4)) = 1`, and the bounded
+  `length word = SigLen ↔ raw.len = SigLen` handoff.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.

@@ -72,6 +72,11 @@ def dispatcherSelectorExpr : Expr :=
     [.Lit (UInt256.ofNat 224),
      .Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0)]]
 
+/-- `iszero(lt(calldatasize(), 4))`, the dispatcher's first top-level guard. -/
+def dispatcherHasSelectorGuardExpr : Expr :=
+  .Call (Sum.inl .ISZERO)
+    [.Call (Sum.inl .LT) [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)]]
+
 /-- `calldataload(4)`, the ABI dynamic-bytes offset word. -/
 def dispatcherOffsetExpr : Expr :=
   .Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 4)]
@@ -99,6 +104,39 @@ theorem eval_dispatcher_callvalue (raw : RawSig) (digest : Digest) :
   simpa [dispatcherCallvalueExpr, forsInitialState_callvalue raw digest]
     using eval_nullop0 (n := 0) (co := some forsVerifierRuntime)
       (primCall_callvalue (n := 0) (forsInitialState raw digest))
+
+private theorem uint256_lt_2548_4 :
+    UInt256.lt (UInt256.ofNat 2548) (UInt256.ofNat 4) = UInt256.ofNat 0 := by
+  rfl
+
+private theorem uint256_isZero_zero :
+    (UInt256.ofNat 0).isZero = UInt256.ofNat 1 := by
+  rfl
+
+theorem eval_dispatcher_has_selector_guard (raw : RawSig) (digest : Digest) :
+    eval 8 dispatcherHasSelectorGuardExpr (some forsVerifierRuntime)
+        (forsInitialState raw digest) =
+      .ok (forsInitialState raw digest, UInt256.ofNat 1) := by
+  let s := forsInitialState raw digest
+  have hsize : eval 2 dispatcherCalldataSizeExpr (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2548) :=
+    eval_dispatcher_calldatasize raw digest
+  have hlt : eval 6 (.Call (Sum.inl .LT)
+        [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)])
+        (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0) := by
+    simpa [uint256_lt_2548_4] using
+      (eval_binop2 (n := 0) (co := some forsVerifierRuntime) (OP := .LT)
+        (f := UInt256.lt)
+        (primCall_lt (n := 4) (s := s) (UInt256.ofNat 2548) (UInt256.ofNat 4))
+        hsize eval_lit)
+  change eval 8
+      (.Call (Sum.inl .ISZERO)
+        [.Call (Sum.inl .LT) [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)]])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 1)
+  simpa [uint256_isZero_zero] using
+    (eval_unop1 (n := 4) (co := some forsVerifierRuntime) (OP := .ISZERO)
+      (f := UInt256.isZero)
+      (primCall_iszero (n := 6) (s := s) (UInt256.ofNat 0)) hlt)
 
 theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
     eval 6 dispatcherSelectorExpr (some forsVerifierRuntime)
