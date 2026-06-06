@@ -574,6 +574,22 @@ theorem dispatcherAfterOffset_toState (s : EvmYul.Yul.State) :
 def dispatcherAfterLength (raw : RawSig) (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
   s.insert "length" (UInt256.ofNat raw.len)
 
+/-- Dispatcher state immediately before the selected `fun_recover` call, after
+    all ABI dispatcher guards have been skipped in the good-length path. -/
+def dispatcherBeforeRecoverState (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  dispatcherAfterLength raw
+    (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
+
+/-- Concrete `fun_recover` arguments in the ABI-good path:
+    signature payload offset, signature length, digest. -/
+def recoverGoodArgs (digest : Digest) : List UInt256 :=
+  [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]
+
+/-- Callee entry state for the good-length `fun_recover` path. -/
+def recoverEntryState (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  👌 (dispatcherBeforeRecoverState raw digest).initcall
+    forsFunRecover.params (recoverGoodArgs digest)
+
 theorem dispatcherAfterLength_executionEnv (raw : RawSig) (s : EvmYul.Yul.State) :
     (dispatcherAfterLength raw s).executionEnv = s.executionEnv := by
   cases s <;> rfl
@@ -663,6 +679,17 @@ theorem dispatcherAfterLength_lookup_offset_after_offset
         (dispatcherAfterLength raw
           (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))) =
       UInt256.ofNat 0x40 := by
+  rfl
+
+theorem dispatcherBeforeRecoverState_account_find
+    (raw : RawSig) (digest : Digest) :
+    (dispatcherBeforeRecoverState raw digest).sharedState.accountMap.find?
+        (dispatcherBeforeRecoverState raw digest).executionEnv.codeOwner =
+      some { (Inhabited.default : EvmYul.Account .Yul) with code := forsVerifierRuntime } := by
+  rfl
+
+theorem forsVerifierRuntime_lookup_fun_recover :
+    forsVerifierRuntime.functions.lookup "fun_recover" = some forsFunRecover := by
   rfl
 
 theorem eval_dispatcher_offset_bound_guard_after_offset

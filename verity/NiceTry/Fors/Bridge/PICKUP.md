@@ -25,6 +25,10 @@
 - Added `ClassA.exec_dispatcher_let_recover_call_args_after_length_of_sigLen`,
   reducing the selected recover `let ret := fun_recover(...)` statement to
   `execCall` with the concrete arguments above.
+- Added compact names for the good `fun_recover` handoff state:
+  `dispatcherBeforeRecoverState`, `recoverGoodArgs`, and `recoverEntryState`, plus
+  the `call_ok` side conditions `dispatcherBeforeRecoverState_account_find` and
+  `forsVerifierRuntime_lookup_fun_recover`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -35,6 +39,7 @@
   good-length payload-bound guard uses `uint256_toByteArray_size` through
   calldata size. The recover-call argument reduction stays inside the existing
   calldata-read trust surface; so does the statement-level `execCall` handoff.
+  The new `call_ok` side conditions use only Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
