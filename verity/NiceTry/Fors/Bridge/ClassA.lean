@@ -165,20 +165,19 @@ theorem eval_dispatcher_has_selector_guard (raw : RawSig) (digest : Digest) :
     (forsInitialState raw digest) (some forsVerifierRuntime)
     (forsInitialState_calldata_size raw digest)
 
-theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
-    eval 6 dispatcherSelectorExpr (some forsVerifierRuntime)
-        (forsInitialState raw digest) =
-      .ok (forsInitialState raw digest, UInt256.ofNat 0x1aad75c5) := by
-  let s := forsInitialState raw digest
+theorem eval_dispatcher_selector_of_calldata
+    (raw : RawSig) (digest : Digest) (s : EvmYul.Yul.State)
+    (co : Option YulContract)
+    (hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest) :
+    eval 6 dispatcherSelectorExpr co s =
+      .ok (s, UInt256.ofNat 0x1aad75c5) := by
   let word := EvmYul.State.calldataload s.toState (UInt256.ofNat 0)
-  have hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest := by
-    simp [s, forsInitialState_toState_calldata raw digest]
   have hload :
       eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0)])
-          (some forsVerifierRuntime) s =
+          co s =
         .ok (s, word) := by
     dsimp [word]
-    exact eval_unop1_thread (n := 0) (co := some forsVerifierRuntime)
+    exact eval_unop1_thread (n := 0) (co := co)
       (primCall_calldataload s (UInt256.ofNat 0)) eval_lit
   have hsel :
       UInt256.shiftRight word (UInt256.ofNat 224) =
@@ -194,18 +193,25 @@ theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
       (.Call (Sum.inl .SHR)
         [.Lit (UInt256.ofNat 224),
          .Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0)]])
-      (some forsVerifierRuntime) s =
+      co s =
     .ok (s, UInt256.ofNat 0x1aad75c5)
   rw [eval_call_prim]
   show evalPrimCall 5 .SHR
       (reverse' (evalArgs 5
         [(.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0)]),
-         .Lit (UInt256.ofNat 224)] (some forsVerifierRuntime) s)) =
+         .Lit (UInt256.ofNat 224)] co s)) =
     .ok (s, UInt256.ofNat 0x1aad75c5)
   rw [evalArgs_cons_ok hload, evalTail_cons_ok, evalArgs_cons_ok eval_lit,
     evalTail_cons_ok, evalArgs_nil]
   simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
     List.singleton_append, evalPrimCall, hprim, hsel, head', List.head!]
+
+theorem eval_dispatcher_selector (raw : RawSig) (digest : Digest) :
+    eval 6 dispatcherSelectorExpr (some forsVerifierRuntime)
+        (forsInitialState raw digest) =
+      .ok (forsInitialState raw digest, UInt256.ofNat 0x1aad75c5) :=
+  eval_dispatcher_selector_of_calldata raw digest (forsInitialState raw digest)
+    (some forsVerifierRuntime) (forsInitialState_toState_calldata raw digest)
 
 theorem eval_dispatcher_offset (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
@@ -328,6 +334,16 @@ theorem eval_dispatcher_has_selector_guard_after_free_mem_ptr
   apply eval_dispatcher_has_selector_guard_of_size
   rw [dispatcherAfterFreeMemPtr_executionEnv]
   exact forsInitialState_calldata_size raw digest
+
+theorem eval_dispatcher_selector_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 6 dispatcherSelectorExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest),
+        UInt256.ofNat 0x1aad75c5) := by
+  apply eval_dispatcher_selector_of_calldata
+  rw [dispatcherAfterFreeMemPtr_toState]
+  exact forsInitialState_toState_calldata raw digest
 
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide
