@@ -59,6 +59,9 @@
   case's first guard input after memory initialization.
 - Added `exec_dispatcher_callvalue_if_after_free_mem_ptr`, which proves the
   selected recover case skips `if callvalue() { ... }` after memory initialization.
+- Added `eval_dispatcher_min_calldata_guard_of_size` and
+  `exec_dispatcher_min_calldata_if_after_free_mem_ptr`, proving the selected
+  recover case skips the ABI minimum-size guard on encoded calldata.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.

@@ -78,6 +78,15 @@ def dispatcherHasSelectorGuardExpr : Expr :=
   .Call (Sum.inl .ISZERO)
     [.Call (Sum.inl .LT) [dispatcherCalldataSizeExpr, .Lit (UInt256.ofNat 4)]]
 
+/-- `slt(add(calldatasize(), not(3)), 64)`, the recover case's ABI minimum-size
+    guard. -/
+def dispatcherMinCalldataGuardExpr : Expr :=
+  .Call (Sum.inl .SLT)
+    [.Call (Sum.inl .ADD)
+      [dispatcherCalldataSizeExpr,
+       .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 3)]],
+     .Lit (UInt256.ofNat 64)]
+
 /-- `calldataload(4)`, the ABI dynamic-bytes offset word. -/
 def dispatcherOffsetExpr : Expr :=
   .Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 4)]
@@ -132,6 +141,12 @@ private theorem uint256_isZero_zero :
     (UInt256.ofNat 0).isZero = UInt256.ofNat 1 := by
   rfl
 
+private theorem uint256_slt_min_calldata_guard :
+    UInt256.slt ((UInt256.ofNat 2548).add ((UInt256.ofNat 3).lnot))
+        (UInt256.ofNat 64) =
+      UInt256.ofNat 0 := by
+  rfl
+
 theorem eval_dispatcher_has_selector_guard_of_size
     (s : EvmYul.Yul.State) (co : Option YulContract)
     (hsize' : s.executionEnv.calldata.size = 2548) :
@@ -164,6 +179,40 @@ theorem eval_dispatcher_has_selector_guard (raw : RawSig) (digest : Digest) :
   eval_dispatcher_has_selector_guard_of_size
     (forsInitialState raw digest) (some forsVerifierRuntime)
     (forsInitialState_calldata_size raw digest)
+
+theorem eval_dispatcher_min_calldata_guard_of_size
+    (s : EvmYul.Yul.State) (co : Option YulContract)
+    (hsize' : s.executionEnv.calldata.size = 2548) :
+    eval 10 dispatcherMinCalldataGuardExpr co s =
+      .ok (s, UInt256.ofNat 0) := by
+  have hsize : eval 2 dispatcherCalldataSizeExpr co s =
+      .ok (s, UInt256.ofNat 2548) :=
+    eval_dispatcher_calldatasize_of_size s co hsize'
+  have hnot3 : eval 4 (.Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 3)]) co s =
+      .ok (s, (UInt256.ofNat 3).lnot) :=
+    eval_unop1 (n := 0) (co := co) (OP := .NOT) (f := UInt256.lnot)
+      (primCall_not (n := 2) (s := s) (UInt256.ofNat 3)) eval_lit
+  have hadd : eval 6
+        (.Call (Sum.inl .ADD)
+          [dispatcherCalldataSizeExpr,
+           .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 3)]])
+        co s =
+      .ok (s, (UInt256.ofNat 2548).add ((UInt256.ofNat 3).lnot)) :=
+    eval_binop2 (n := 0) (co := co) (OP := .ADD) (f := UInt256.add)
+      (primCall_add (n := 4) (s := s) (UInt256.ofNat 2548) ((UInt256.ofNat 3).lnot))
+      hsize hnot3
+  change eval 10
+      (.Call (Sum.inl .SLT)
+        [.Call (Sum.inl .ADD)
+          [dispatcherCalldataSizeExpr,
+           .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 3)]],
+         .Lit (UInt256.ofNat 64)])
+      co s = .ok (s, UInt256.ofNat 0)
+  simpa [uint256_slt_min_calldata_guard] using
+    (eval_binop2 (n := 4) (co := co) (OP := .SLT) (f := UInt256.slt)
+      (primCall_slt (n := 8) (s := s)
+        ((UInt256.ofNat 2548).add ((UInt256.ofNat 3).lnot)) (UInt256.ofNat 64))
+      hadd eval_lit)
 
 theorem eval_dispatcher_selector_of_calldata
     (raw : RawSig) (digest : Digest) (s : EvmYul.Yul.State)
@@ -383,6 +432,27 @@ theorem exec_dispatcher_callvalue_if_after_free_mem_ptr
     (cond := dispatcherCallvalueExpr) (body := body)
     (s' := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
     (eval_dispatcher_callvalue_after_free_mem_ptr raw digest)
+
+theorem eval_dispatcher_min_calldata_guard_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 10 dispatcherMinCalldataGuardExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat 0) := by
+  apply eval_dispatcher_min_calldata_guard_of_size
+  rw [dispatcherAfterFreeMemPtr_executionEnv]
+  exact forsInitialState_calldata_size raw digest
+
+theorem exec_dispatcher_min_calldata_if_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 11 (.If dispatcherMinCalldataGuardExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) := by
+  exact exec_if_false
+    (n := 10) (co := some forsVerifierRuntime)
+    (s := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (cond := dispatcherMinCalldataGuardExpr) (body := body)
+    (s' := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+    (eval_dispatcher_min_calldata_guard_after_free_mem_ptr raw digest)
 
 theorem eval_dispatcher_offset_after_free_mem_ptr
     (raw : RawSig) (digest : Digest) :
