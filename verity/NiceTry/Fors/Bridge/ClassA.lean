@@ -696,6 +696,17 @@ theorem forsVerifierRuntime_lookup_fun_recover :
     forsVerifierRuntime.functions.lookup "fun_recover" = some forsFunRecover := by
   rfl
 
+theorem recoverAfterVarInit_account_find
+    (raw : RawSig) (digest : Digest) :
+    (recoverAfterVarInit raw digest).sharedState.accountMap.find?
+        (recoverAfterVarInit raw digest).executionEnv.codeOwner =
+      some { (Inhabited.default : EvmYul.Account .Yul) with code := forsVerifierRuntime } := by
+  rfl
+
+theorem forsVerifierRuntime_lookup_const_sig_len :
+    forsVerifierRuntime.functions.lookup "constant_FORS_SIG_LEN" = some forsConstSigLen := by
+  rfl
+
 theorem recoverEntryState_lookup_sig_offset (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "var_sig_offset" (recoverEntryState raw digest) =
       UInt256.ofNat 100 := by
