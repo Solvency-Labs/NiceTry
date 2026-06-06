@@ -1,5 +1,17 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Agent progress (2026-06-07)
+
+- Added `ClassA.eval_dispatcher_offset_bound_guard_after_offset` and
+  `exec_dispatcher_offset_bound_if_after_offset`, proving the selected recover
+  case skips `if gt(offset, 0xffffffffffffffff) { revert(...) }` after
+  `offset := calldataload(4)`.
+- Verified `lake build NiceTry` green. Axiom audit for the new offset-bound
+  guard step is only Lean's standard axioms (`propext`, `Classical.choice`,
+  `Quot.sound`).
+- Next: bind `value := calldataload(36)` and continue the selected recover
+  dispatcher trace toward the dynamic-bytes length check.
+
 ## Agent progress (2026-06-06)
 
 - Added `Bridge/CalldataBytes.lean` and registered it in `lakefile.lean`.

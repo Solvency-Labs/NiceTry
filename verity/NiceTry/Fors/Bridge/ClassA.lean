@@ -99,6 +99,12 @@ def dispatcherDigestExpr : Expr :=
 def dispatcherLengthWordExpr : Expr :=
   .Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 0x44)]
 
+/-- `gt(offset, 0xffffffffffffffff)`, the recover case's ABI offset upper-bound
+    guard. -/
+def dispatcherOffsetBoundGuardExpr : Expr :=
+  .Call (Sum.inl .GT)
+    [.Var "offset", .Lit (UInt256.ofNat 0xffffffffffffffff)]
+
 theorem eval_dispatcher_calldatasize (raw : RawSig) (digest : Digest) :
     eval 2 dispatcherCalldataSizeExpr (some forsVerifierRuntime)
         (forsInitialState raw digest) =
@@ -144,6 +150,11 @@ private theorem uint256_isZero_zero :
 private theorem uint256_slt_min_calldata_guard :
     UInt256.slt ((UInt256.ofNat 2548).add ((UInt256.ofNat 3).lnot))
         (UInt256.ofNat 64) =
+      UInt256.ofNat 0 := by
+  rfl
+
+private theorem uint256_gt_offset_bound :
+    UInt256.gt (UInt256.ofNat 0x40) (UInt256.ofNat 0xffffffffffffffff) =
       UInt256.ofNat 0 := by
   rfl
 
@@ -517,6 +528,50 @@ theorem eval_dispatcher_length_word_after_free_mem_ptr
   apply eval_dispatcher_length_word_of_calldata
   rw [dispatcherAfterFreeMemPtr_toState]
   exact forsInitialState_toState_calldata raw digest
+
+theorem dispatcherAfterOffset_lookup_offset_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "offset"
+        (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))) =
+      UInt256.ofNat 0x40 := by
+  rfl
+
+theorem eval_dispatcher_offset_bound_guard_after_offset
+    (raw : RawSig) (digest : Digest) :
+    eval 6 dispatcherOffsetBoundGuardExpr (some forsVerifierRuntime)
+        (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))) =
+      .ok (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)),
+        UInt256.ofNat 0) := by
+  let s := dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))
+  have hlookup :
+      EvmYul.Yul.State.lookup! "offset" s = UInt256.ofNat 0x40 := by
+    dsimp [s]
+    exact dispatcherAfterOffset_lookup_offset_after_free_mem_ptr raw digest
+  change eval 6
+      (.Call (Sum.inl .GT)
+        [.Var "offset", .Lit (UInt256.ofNat 0xffffffffffffffff)])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0)
+  have hgt := eval_binop2 (n := 0) (co := some forsVerifierRuntime) (OP := .GT)
+      (f := UInt256.gt)
+      (primCall_gt (n := 4) (s := s)
+        (EvmYul.Yul.State.lookup! "offset" s)
+        (UInt256.ofNat 0xffffffffffffffff))
+      (eval_var (n := 1) (co := some forsVerifierRuntime) (s := s) (id := "offset"))
+      (eval_lit (n := 3) (co := some forsVerifierRuntime) (s := s)
+        (val := UInt256.ofNat 0xffffffffffffffff))
+  simpa [dispatcherOffsetBoundGuardExpr, hlookup, uint256_gt_offset_bound] using hgt
+
+theorem exec_dispatcher_offset_bound_if_after_offset
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 7 (.If dispatcherOffsetBoundGuardExpr body) (some forsVerifierRuntime)
+        (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))) =
+      .ok (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))) := by
+  exact exec_if_false
+    (n := 6) (co := some forsVerifierRuntime)
+    (s := dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
+    (cond := dispatcherOffsetBoundGuardExpr) (body := body)
+    (s' := dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
+    (eval_dispatcher_offset_bound_guard_after_offset raw digest)
 
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide
