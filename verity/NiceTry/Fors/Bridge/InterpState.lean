@@ -6,9 +6,10 @@ import NiceTry.Fors.Bridge.Interp
 
 The contract's *stateful* opcodes, reduced through EVMYulLean's `step`:
 
-* **Reads (state-preserving):** `calldataload` (via `unaryStateOp`, which rebuilds
-  the state to an `=`-state — discharged by `cases s <;> rfl`), and the environment
-  ops `callvalue` / `calldatasize` (via `executionEnvOp`, state kept verbatim).
+* **Reads:** `calldataload` (state-preserving, via `unaryStateOp`, which rebuilds
+  the state to an `=`-state — discharged by `cases s <;> rfl`), `mload`
+  (state threads the updated active-word count), and the environment ops
+  `callvalue` / `calldatasize` (via `executionEnvOp`, state kept verbatim).
 * **Memory write:** `mstore` — result threads `s.setMachineState (s.toMachineState.mstore a b)`,
   no return value (`none`).
 * **Hash (symbolic):** `keccak256` — returns `(val, mState')` from `MachineState.keccak256`;
@@ -52,6 +53,20 @@ theorem primCall_calldatasize :
   unfold primCall
   simp [show step (τ := .Yul) Operation.CALLDATASIZE .none s []
           = .ok (s, some (UInt256.ofNat s.executionEnv.calldata.size)) from by unfold step; rfl]
+
+/-- `mload(a)` reads one memory word and updates the active-word count. -/
+theorem primCall_mload :
+    primCall (n+1) s .MLOAD [a]
+      = let (v, mState') := s.toMachineState.mload a
+        .ok (s.setMachineState mState', [v]) := by
+  have hmachine : s.toSharedState.toMachineState = s.toMachineState := by
+    cases s <;> rfl
+  have hstep : EvmYul.step (τ := .Yul) Operation.MLOAD .none s [a]
+          = (let (v, mState') := s.toSharedState.toMachineState.mload a
+             .ok (s.setMachineState mState', some v)) := by
+    rfl
+  unfold primCall
+  simp [hstep, hmachine]
 
 /-- `mstore(a, b)` writes word `b` at memory offset `a`; no return value. -/
 theorem primCall_mstore :
