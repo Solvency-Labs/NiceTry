@@ -4,9 +4,11 @@ import NiceTry.Fors.Bridge.AddressShape
 /-!
 # WS-4 — reduction of `ForsRefines` to three interpreter-execution facts
 
-`ForsRefines` (`EvmRun.lean`) is the deployed-contract refinement target:
+`ForsRefines` (`EvmRun.lean`) is the deployed-contract refinement target over ABI-
+representable raw lengths:
 
-    ∀ raw digest, evmRun raw digest = (recoverRaw? raw digest).getD 0
+    ∀ raw digest, raw.len < 2^256 →
+      evmRun raw digest = (recoverRaw? raw digest).getD 0
 
 This file does **all of the model-side glue** — the case analysis of `recoverRaw?`
 (length check → `decodeRaw` → forced-zero grinding guard) and the `none ↔ address(0)`
@@ -67,7 +69,8 @@ splits on the length and forced-zero guards and discharges the `none ↔ address
 gap, leaving only the three execution obligations. No `sorry`, no new axiom.
 -/
 theorem forsRefines_of_branches
-    (h_len : ∀ raw digest, raw.len ≠ SigLen → evmRun raw digest = 0)
+    (h_len : ∀ raw digest, RawSigLenFitsEvmWord raw →
+        raw.len ≠ SigLen → evmRun raw digest = 0)
     (h_guard : ∀ raw digest, raw.len = SigLen →
         forcedZero (dValOf raw digest) = false → evmRun raw digest = 0)
     (h_accept : ∀ raw digest, raw.len = SigLen →
@@ -76,7 +79,7 @@ theorem forsRefines_of_branches
           addressFromRoot (decodeTyped raw).pkSeed
             (recoverRoot (decodeTyped raw) (dValOf raw digest))) :
     ForsRefines := by
-  intro raw digest
+  intro raw digest hbound
   rw [recoverRaw_eq raw digest]
   by_cases hlen : raw.len = SigLen
   · rw [if_pos hlen]
@@ -90,6 +93,6 @@ theorem forsRefines_of_branches
       simpa using h_guard raw digest hlen hfz'
   · -- bad length: model rejects, contract returns address(0)
     rw [if_neg hlen]
-    simpa using h_len raw digest hlen
+    simpa using h_len raw digest hbound hlen
 
 end NiceTry.Fors.Bridge

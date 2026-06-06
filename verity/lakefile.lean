@@ -27,6 +27,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Verity.TreeShapeKernel,
     `NiceTry.Fors.Verity.TreeKeccakKernel,
     `NiceTry.Fors.Verity.FullVerifierKernel,
+    `NiceTry.Fors.Bridge.RawDomain,
     `NiceTry.Fors.Bridge.Oracle,
     `NiceTry.Fors.Bridge.Equivalence,
     `NiceTry.Fors.Bridge.MemoryLayout,

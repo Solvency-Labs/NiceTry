@@ -16,11 +16,13 @@
   `rawLen_uint256_collision :
     UInt256.ofNat (SigLen + UInt256.size) = UInt256.ofNat SigLen`
   and `rawLen_collision_bad_length : SigLen + UInt256.size ≠ SigLen`.
-  Therefore the current unbounded bad-length implication cannot be discharged
-  from the EVM length word alone; it needs a `raw.len < 2^256`/real-byte-length
-  invariant or an adjusted spine statement.
-- Added the bounded bridge lemma the dispatcher trace can use once that invariant
-  exists:
+  Therefore the unbounded bad-length implication cannot be discharged from the
+  EVM length word alone.
+- Fixed the domain mismatch by adding shared `Bridge/RawDomain.lean` and changing
+  `ForsRefines` / `RefinesModel` to quantify over `RawSigLenFitsEvmWord raw`
+  (`raw.len < 2^256`). This is the ABI-representable domain for
+  `recover(bytes,bytes32)`.
+- Added the bounded bridge lemma the dispatcher trace can use:
   `rawLen_word_eq_sigLen_iff_of_lt :
     raw.len < UInt256.size →
     (UInt256.ofNat raw.len = UInt256.ofNat SigLen ↔ raw.len = SigLen)`.
@@ -30,8 +32,7 @@
 - Verified `lake build NiceTry` green. Axiom audit for the new `calldataload`
   facts: only `ffi_zeroes_eq_empty`, `uint256_toByteArray_size`, and
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms.
-- Next: either add the missing `RawSig.len` bound/invariant to the spine, or prove
-  the dispatcher trace under that precondition using
+- Next: prove the dispatcher length trace under `RawSigLenFitsEvmWord raw` using
   `rawLen_word_eq_sigLen_iff_of_lt`; independent raw-field payload reads can
   proceed meanwhile.
 

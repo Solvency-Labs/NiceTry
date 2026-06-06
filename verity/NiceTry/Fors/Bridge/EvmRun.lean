@@ -1,4 +1,5 @@
 import NiceTry.Fors.Bridge.ForsRuntime
+import NiceTry.Fors.Bridge.RawDomain
 import NiceTry.Fors.Spec
 
 /-!
@@ -68,16 +69,20 @@ def evmRun (raw : RawSig) (digest : Digest) : Address :=
 /-- **The refinement target for the deployed contract.** Note `none ↔ address(0)`:
     the model returns `none` on bad/not-grinded sigs, the contract returns
     `address(0)`, so this is `.getD 0`, not exact equality. This is the goal the
-    whole Bridge feeds; it is **the open multi-week proof** (the FORS tree-loop
-    induction + ABI-parse), decomposed below. NOT proved here. -/
+    whole Bridge feeds over the ABI-representable input domain; it is **the open
+    multi-week proof** (the FORS tree-loop induction + ABI-parse), decomposed
+    below. NOT proved here. -/
 def ForsRefines : Prop :=
-  ∀ (raw : RawSig) (digest : Digest), evmRun raw digest = (recoverRaw? raw digest).getD 0
+  ∀ (raw : RawSig) (digest : Digest), RawSigLenFitsEvmWord raw →
+    evmRun raw digest = (recoverRaw? raw digest).getD 0
 
 /-!
 ## Decomposition (how `ForsRefines` is discharged — open goals)
 
 Proving `ForsRefines` reduces, via `runForsCalldata` unfolding the interpreter, to:
 
+0. **ABI domain** — `raw.len < 2^256`, because `recover(bytes,bytes32)` carries
+   the dynamic bytes length in one EVM word.
 1. **ABI parse** — `calldataload` over `encodeForsCalldata raw digest` yields the
    dispatcher's `offset/length/digest` and `fun_recover`'s per-field reads match
    `raw.read16` / `decodeRaw` (Codex's `decodeTyped_reads_raw_header`,
