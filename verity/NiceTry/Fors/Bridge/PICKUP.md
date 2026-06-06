@@ -9,12 +9,17 @@
 - Added `ClassA.eval_dispatcher_offset_min_calldata_guard_after_offset` and
   `exec_dispatcher_offset_min_calldata_if_after_offset`, proving encoded calldata
   skips `if iszero(slt(add(offset, 35), calldatasize())) { revert(...) }`.
+- Added `ClassA.exec_dispatcher_let_length_after_offset`, binding
+  `length := calldataload(add(4, offset))` to `UInt256.ofNat raw.len` in the
+  selected recover case.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
-  `encodeForsCalldata_size`.
-- Next: bind `length := calldataload(add(4, offset))` and continue the selected
-  recover dispatcher trace toward the dynamic-bytes length check.
+  `encodeForsCalldata_size`. The length binding stays inside the existing
+  calldata-read trust surface (`ffi_zeroes_eq_empty`,
+  `uint256_toByteArray_roundtrip`, `uint256_toByteArray_size`).
+- Next: skip `if gt(length, 0xffffffffffffffff) { revert(...) }` and continue the
+  selected recover dispatcher trace toward the dynamic-bytes payload bound.
 
 ## Agent progress (2026-06-06)
 
