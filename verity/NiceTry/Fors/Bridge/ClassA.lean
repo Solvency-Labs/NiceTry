@@ -454,6 +454,43 @@ theorem exec_dispatcher_min_calldata_if_after_free_mem_ptr
     (s' := dispatcherAfterFreeMemPtr (forsInitialState raw digest))
     (eval_dispatcher_min_calldata_guard_after_free_mem_ptr raw digest)
 
+/-- State after the selected recover case binds `offset := calldataload(4)`. -/
+def dispatcherAfterOffset (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "offset" (UInt256.ofNat 0x40)
+
+theorem exec_dispatcher_let_offset_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    exec 5 (.Let ["offset"] (.some dispatcherOffsetExpr)) (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest))) := by
+  let s := dispatcherAfterFreeMemPtr (forsInitialState raw digest)
+  have hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest := by
+    dsimp [s]
+    rw [dispatcherAfterFreeMemPtr_toState]
+    exact forsInitialState_toState_calldata raw digest
+  have hoff :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 4) = UInt256.ofNat 0x40 :=
+    calldataload_encode_offset raw digest s.toState hcd
+  change exec 5 (.Let ["offset"] (.some (.Call (Sum.inl .CALLDATALOAD) [.Lit (UInt256.ofNat 4)])))
+      (some forsVerifierRuntime) s = .ok (dispatcherAfterOffset s)
+  rw [exec_let_prim (n := 4)]
+  show execPrimCall 4 .CALLDATALOAD ["offset"]
+      (reverse' (evalArgs 4 [.Lit (UInt256.ofNat 4)] (some forsVerifierRuntime) s)) =
+    .ok (dispatcherAfterOffset s)
+  rw [evalArgs_cons_ok (n := 3) (arg := .Lit (UInt256.ofNat 4))
+    (args := []) (co := some forsVerifierRuntime) (s := s)
+    (h := eval_lit (n := 2))]
+  rw [evalTail_cons_ok (n := 2), evalArgs_nil]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append]
+  rw [execPrimCall_ok
+    (vars := ["offset"]) (prim := .CALLDATALOAD)
+    (args := [UInt256.ofNat 4]) (s₁ := s) (vals := [UInt256.ofNat 0x40])
+    (s := s)
+    (h := by
+      simpa [hoff] using
+        (primCall_calldataload (n := 3) s (UInt256.ofNat 4)))]
+  cases s <;> rfl
+
 theorem eval_dispatcher_offset_after_free_mem_ptr
     (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
