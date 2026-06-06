@@ -7,6 +7,9 @@ import NiceTry.Fors.Bridge.Interp
 The dispatcher's control structure: `switch shr(224, calldataload(0)) case … { … }`
 and `let ret := fun_recover(…)`. This file reduces both.
 
+* **Primitive statement calls** (`exec_let_prim` / `exec_exprstmt_prim` →
+  `execPrimCall_ok`): a `let v := calldataload(args)` or bare `mstore(args)` runs
+  a builtin and fills local return variables.
 * **User-function call** (`exec_let_call` / `exec_exprstmt_call` → `execCall_ok` →
   `call_ok`): a `let v := f(args)` / bare `f(args)` enters `f`'s body. `call_ok`
   fires once the contract is found in the account map (`hfind` — guaranteed by the
@@ -27,6 +30,34 @@ open EvmYul EvmYul.Yul EvmYul.Yul.Ast
 set_option maxHeartbeats 800000
 
 variable {n : Nat} {co : Option YulContract} {s : EvmYul.Yul.State}
+
+/-! ## Builtin calls as statements -/
+
+/-- `let v… := OP(args)` — evaluate args, then run the primitive and fill vars. -/
+theorem exec_let_prim {vars prim args} :
+    exec (n+1) (.Let vars (.some (.Call (Sum.inl prim) args))) co s
+      = execPrimCall n prim vars (reverse' (evalArgs n args.reverse co s)) := by
+  conv_lhs => rw [exec]
+
+/-- bare `OP(args)` statement (coarity 0) — evaluate args, then run the primitive. -/
+theorem exec_exprstmt_prim {prim args} :
+    exec (n+1) (.ExprStmtCall (.Call (Sum.inl prim) args)) co s
+      = execPrimCall n prim [] (reverse' (evalArgs n args.reverse co s)) := by
+  conv_lhs => rw [exec]
+
+theorem execPrimCall_ok {vars prim args s₁ vals}
+    (h : primCall n s prim args = .ok (s₁, vals)) :
+    execPrimCall n prim vars (.ok (s, args)) = .ok (s₁.multifill vars vals) := by
+  conv_lhs => rw [execPrimCall]
+  rw [h]
+  rfl
+
+theorem execPrimCall_err {vars prim args e}
+    (h : primCall n s prim args = .error e) :
+    execPrimCall n prim vars (.ok (s, args)) = .error e := by
+  conv_lhs => rw [execPrimCall]
+  rw [h]
+  rfl
 
 /-! ## Entering a user function -/
 
