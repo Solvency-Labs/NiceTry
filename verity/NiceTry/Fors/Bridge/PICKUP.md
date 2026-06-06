@@ -31,14 +31,16 @@
   `fun_recover` returns a zero word on bad length.
 - Added `InterpEval.eval_unop1_thread` and `eval_binop2_thread`, the expression
   composition lemmas for state-threading builtins (`mload` and `keccak256`).
+- Added `InterpEval.eval_nullop0`, the expression composition lemma for
+  zero-argument builtins (`calldatasize`, `callvalue`).
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.
 - Verified `lake build NiceTry` green. Axiom audit for the new `calldataload`
   facts: only `ffi_zeroes_eq_empty`, `uint256_toByteArray_size`, and
   `uint256_toByteArray_roundtrip` beyond Lean's standard axioms. Axiom audit for
-  `primCall_mload`, `eval_unop1_thread`, and `eval_binop2_thread`: only Lean's
-  standard axioms.
+  `primCall_mload`, `eval_nullop0`, `eval_unop1_thread`, and
+  `eval_binop2_thread`: only Lean's standard axioms.
 - Next: prove the dispatcher length trace under `RawSigLenFitsEvmWord raw` using
   `rawLen_word_eq_sigLen_iff_of_lt`; independent raw-field payload reads can
   proceed meanwhile.

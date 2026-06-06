@@ -15,6 +15,7 @@ import NiceTry.Fors.Bridge.InterpState
 * the **composition lemmas** `eval_unop1` / `eval_binop2`: given each argument's
   evaluation (state-preserving) and the op's `primCall` result, the whole call
   evaluates to the op applied to the argument values;
+* `eval_nullop0`, for zero-argument builtins (`calldatasize`, `callvalue`);
 * the state-threading variants `eval_unop1_thread` / `eval_binop2_thread`, for
   expression opcodes such as `mload` and `keccak256` that update machine state.
 
@@ -52,6 +53,16 @@ theorem eval_call_prim {n prim args co s} :
     eval (n+1) (.Call (Sum.inl prim) args) co s
       = evalPrimCall n prim (reverse' (evalArgs n args.reverse co s)) := by
   conv_lhs => rw [eval]
+
+/-- **Nullary builtin call.** Given `OP()` yields one result word, the call
+    expression evaluates to that word. Used for `calldatasize()` / `callvalue()`. -/
+theorem eval_nullop0 {n co} {s s' : EvmYul.Yul.State} {out : UInt256} {OP : PrimOp}
+    (hprim : primCall (n+1) s OP [] = .ok (s', [out])) :
+    eval (n+2) (.Call (Sum.inl OP) []) co s = .ok (s', out) := by
+  rw [eval_call_prim]
+  show evalPrimCall (n+1) OP (reverse' (evalArgs (n+1) [] co s)) = _
+  rw [evalArgs_nil]
+  simp only [reverse', List.reverse_nil, evalPrimCall, hprim, head', List.head!]
 
 /-- **Unary builtin call.** Given the argument evaluates to `v` (state-preserving)
     and `OP` on `[v]` yields `[f v]`, the call evaluates to `f v`. -/
@@ -120,6 +131,18 @@ example (s : EvmYul.Yul.State) (a b : UInt256) (co : Option YulContract) :
       = .ok (s, a.land b.lnot) :=
   eval_binop2 (n := 0) (primCall_and a b.lnot) eval_lit
     (eval_unop1 (n := 0) (primCall_not b) eval_lit)
+
+/-- Regression / usage: nullary evaluation for `calldatasize()`. -/
+example (s : EvmYul.Yul.State) (co : Option YulContract) :
+    eval 2 (.Call (Sum.inl .CALLDATASIZE) []) co s
+      = .ok (s, UInt256.ofNat s.executionEnv.calldata.size) :=
+  eval_nullop0 (n := 0) (primCall_calldatasize (n := 0) s)
+
+/-- Regression / usage: nullary evaluation for `callvalue()`. -/
+example (s : EvmYul.Yul.State) (co : Option YulContract) :
+    eval 2 (.Call (Sum.inl .CALLVALUE) []) co s
+      = .ok (s, s.executionEnv.weiValue) :=
+  eval_nullop0 (n := 0) (primCall_callvalue (n := 0) s)
 
 /-- Regression / usage: state-threading unary evaluation for `mload(a)`. -/
 example (s : EvmYul.Yul.State) (a : UInt256) (co : Option YulContract) :
