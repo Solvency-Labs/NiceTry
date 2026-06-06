@@ -1,4 +1,5 @@
 import NiceTry.Fors.Bridge.CalldataBytes
+import NiceTry.Fors.Bridge.InterpCall
 import NiceTry.Fors.Bridge.InterpEval
 
 /-!
@@ -238,5 +239,51 @@ theorem dispatcher_length_word_eq_sigLen_iff (raw : RawSig) (digest : Digest)
   rw [calldataload_encode_length raw digest (forsInitialState raw digest).toState
     (forsInitialState_toState_calldata raw digest)]
   exact rawLen_word_eq_sigLen_iff_of_lt raw hbound
+
+/-! ## First dispatcher statement -/
+
+/-- First statement in the runtime dispatcher: initialize Solidity's free-memory
+    pointer slot. -/
+def dispatcherFreeMemPtrStmt : Stmt :=
+  .ExprStmtCall (.Call (Sum.inl .MSTORE)
+    [.Lit (UInt256.ofNat 64), .Lit (UInt256.ofNat 0x80)])
+
+/-- Post-state after `mstore(64, 0x80)`. -/
+def dispatcherAfterFreeMemPtr (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.setMachineState (s.toMachineState.mstore (UInt256.ofNat 64) (UInt256.ofNat 0x80))
+
+theorem exec_dispatcher_free_mem_ptr
+    (s : EvmYul.Yul.State) (co : Option YulContract) :
+    exec 7 dispatcherFreeMemPtrStmt co s =
+      .ok (dispatcherAfterFreeMemPtr s) := by
+  change exec 7
+      (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Lit (UInt256.ofNat 64), .Lit (UInt256.ofNat 0x80)]))
+      co s =
+    .ok (dispatcherAfterFreeMemPtr s)
+  rw [exec_exprstmt_prim (n := 6)]
+  show execPrimCall 6 .MSTORE []
+      (reverse' (evalArgs 6
+        [.Lit (UInt256.ofNat 0x80), .Lit (UInt256.ofNat 64)] co s)) =
+    .ok (dispatcherAfterFreeMemPtr s)
+  rw [evalArgs_cons_ok (n := 5) (arg := .Lit (UInt256.ofNat 0x80))
+    (args := [.Lit (UInt256.ofNat 64)]) (co := co) (s := s)
+    (h := eval_lit (n := 4))]
+  rw [evalTail_cons_ok (n := 4)]
+  rw [evalArgs_cons_ok (n := 3) (arg := .Lit (UInt256.ofNat 64))
+    (args := []) (co := co) (s := s)
+    (h := eval_lit (n := 2))]
+  rw [evalTail_cons_ok (n := 2), evalArgs_nil]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok
+    (vars := []) (prim := .MSTORE)
+    (args := [UInt256.ofNat 64, UInt256.ofNat 0x80])
+    (s₁ := dispatcherAfterFreeMemPtr s) (vals := [])
+    (s := s)
+    (h := by
+      simpa [dispatcherAfterFreeMemPtr] using
+        (primCall_mstore (n := 5) s (UInt256.ofNat 64) (UInt256.ofNat 0x80)))]
+  cases dispatcherAfterFreeMemPtr s <;> rfl
 
 end NiceTry.Fors.Bridge
