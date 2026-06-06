@@ -29,6 +29,9 @@
   `dispatcherBeforeRecoverState`, `recoverGoodArgs`, and `recoverEntryState`, plus
   the `call_ok` side conditions `dispatcherBeforeRecoverState_account_find` and
   `forsVerifierRuntime_lookup_fun_recover`.
+- Added `Interp.exec_let_lit` and `Interp.exec_let_var`, the simple statement
+  reducers needed to start stepping `fun_recover`'s literal and variable
+  assignments.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -40,6 +43,7 @@
   calldata size. The recover-call argument reduction stays inside the existing
   calldata-read trust surface; so does the statement-level `execCall` handoff.
   The new `call_ok` side conditions use only Lean's standard axioms.
+  `exec_let_lit` and `exec_let_var` also use only Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 

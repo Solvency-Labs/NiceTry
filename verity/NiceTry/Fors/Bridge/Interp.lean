@@ -91,6 +91,20 @@ through `evalArgs` + `primCall` and get a per-builtin lemma in the follow-on fil
     evalArgs (n+1) [] co s = .ok (s, []) := by
   conv_lhs => rw [evalArgs]
 
+/-! ## Simple `let` statements -/
+
+/-- `let x := literal` inserts the literal into the current variable store. -/
+theorem exec_let_lit {vars lit} :
+    exec (n+1) (.Let vars (.some (.Lit lit))) co s =
+      .ok (s.insert vars.head! lit) := by
+  conv_lhs => rw [exec]
+
+/-- `let x := y` copies the current value of `y` into `x`. -/
+theorem exec_let_var {vars id} :
+    exec (n+1) (.Let vars (.some (.Var id))) co s =
+      .ok (s.insert vars.head! s[id]!) := by
+  conv_lhs => rw [exec]
+
 /-! ## Control flow (continued) -/
 
 /-- `if`, error branch: a failing condition short-circuits. -/
