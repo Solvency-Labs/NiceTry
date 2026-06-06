@@ -93,6 +93,17 @@ theorem encodeForsCalldata_calldatasize_word (raw : RawSig) (digest : Digest) :
     UInt256.ofNat (encodeForsCalldata raw digest).size = UInt256.ofNat 2548 := by
   rw [encodeForsCalldata_size]
 
+/-! ## Boundary note: `RawSig.len` is unbounded, ABI length words are not. -/
+
+theorem rawLen_uint256_collision :
+    UInt256.ofNat (SigLen + UInt256.size) = UInt256.ofNat SigLen := by
+  apply uint256_eq_of_toNat_eq
+  simp [UInt256.ofNat, UInt256.toNat, Fin.ofNat]
+
+theorem rawLen_collision_bad_length : SigLen + UInt256.size ≠ SigLen := by
+  unfold UInt256.size
+  omega
+
 theorem readBytes_window_32 (source : ByteArray) (start : Nat)
     (hstart : start < 2 ^ 64)
     (hbound : start + 32 ≤ source.size) :
