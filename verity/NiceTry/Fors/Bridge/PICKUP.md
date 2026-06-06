@@ -55,6 +55,8 @@
 - Generalized dispatcher offset/digest/length word evaluations to `_of_calldata`
   forms and added their post-`mstore` specializations for the selected recover
   case trace.
+- Added `eval_dispatcher_callvalue_after_free_mem_ptr`, the selected recover
+  case's first guard input after memory initialization.
 - Added one labeled codec axiom in `Bridge/EvmFfiSpec.lean`:
   `uint256_toByteArray_roundtrip`, the planned Class-A word round-trip for
   `uInt256OfByteArray v.toByteArray = v`.

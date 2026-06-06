@@ -363,6 +363,15 @@ theorem eval_dispatcher_selector_after_free_mem_ptr
   rw [dispatcherAfterFreeMemPtr_toState]
   exact forsInitialState_toState_calldata raw digest
 
+theorem eval_dispatcher_callvalue_after_free_mem_ptr
+    (raw : RawSig) (digest : Digest) :
+    eval 2 dispatcherCallvalueExpr (some forsVerifierRuntime)
+        (dispatcherAfterFreeMemPtr (forsInitialState raw digest)) =
+      .ok (dispatcherAfterFreeMemPtr (forsInitialState raw digest), UInt256.ofNat 0) := by
+  apply eval_dispatcher_callvalue_of_zero
+  rw [dispatcherAfterFreeMemPtr_executionEnv]
+  exact forsInitialState_callvalue raw digest
+
 theorem eval_dispatcher_offset_after_free_mem_ptr
     (raw : RawSig) (digest : Digest) :
     eval 4 dispatcherOffsetExpr (some forsVerifierRuntime)
