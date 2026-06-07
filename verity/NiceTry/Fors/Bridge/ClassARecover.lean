@@ -78,6 +78,19 @@ def recoverLow16Mask : UInt256 :=
 def recoverHigh16MaskExpr : Expr :=
   .Call (Sum.inl .NOT) [.Lit recoverLow16Mask]
 
+/-- The high-16-byte mask as a concrete word. -/
+def recoverHigh16MaskWord : UInt256 :=
+  UInt256.ofNat 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
+
+/-- The contract-side masked `usr_pkSeed` word, before connecting it to the model. -/
+def recoverPkSeedWord (raw : RawSig) : UInt256 :=
+  (EvmYul.uInt256OfByteArray
+    (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2)).land recoverHigh16MaskWord
+
+/-- `and(calldataload(add(var_sig_offset, 0x10)), not(low16mask))`. -/
+def recoverPkSeedMaskedExpr : Expr :=
+  .Call (Sum.inl .AND) [recoverPkSeedCalldataReadExpr, recoverHigh16MaskExpr]
+
 /-- `add(var_sig_offset, product)`, the base of the trailer/counter read. -/
 def recoverCounterCalldataBaseExpr : Expr :=
   .Call (Sum.inl .ADD) [.Var "var_sig_offset", .Var "product"]
@@ -759,14 +772,26 @@ theorem eval_recover_high16_mask
     (raw : RawSig) (digest : Digest) :
     eval 4 recoverHigh16MaskExpr (some forsVerifierRuntime)
         (recoverAfterRet3FromRet2 raw digest) =
-      .ok (recoverAfterRet3FromRet2 raw digest,
-        UInt256.ofNat 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000) := by
+      .ok (recoverAfterRet3FromRet2 raw digest, recoverHigh16MaskWord) := by
   let s := recoverAfterRet3FromRet2 raw digest
-  simpa [recoverHigh16MaskExpr, uint256_not_low16_mask] using
+  simpa [recoverHigh16MaskExpr, recoverHigh16MaskWord, uint256_not_low16_mask] using
     (eval_unop1 (n := 0) (co := some forsVerifierRuntime) (OP := .NOT)
       (f := UInt256.lnot)
       (primCall_not (n := 2) (s := s) recoverLow16Mask)
       (eval_lit (n := 1) (co := some forsVerifierRuntime) (s := s)
+        (val := recoverLow16Mask)))
+
+theorem eval_recover_high16_mask_fuel11
+    (raw : RawSig) (digest : Digest) :
+    eval 11 recoverHigh16MaskExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, recoverHigh16MaskWord) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  simpa [recoverHigh16MaskExpr, recoverHigh16MaskWord, uint256_not_low16_mask] using
+    (eval_unop1 (n := 7) (co := some forsVerifierRuntime) (OP := .NOT)
+      (f := UInt256.lnot)
+      (primCall_not (n := 9) (s := s) recoverLow16Mask)
+      (eval_lit (n := 8) (co := some forsVerifierRuntime) (s := s)
         (val := recoverLow16Mask)))
 
 theorem eval_recover_pkSeed_calldataload_pair
@@ -794,6 +819,22 @@ theorem eval_recover_pkSeed_calldataload_pair
       (eval_recover_pkSeed_calldata_offset raw digest)
   rw [hload] at h
   exact h
+
+theorem eval_recover_pkSeed_masked
+    (raw : RawSig) (digest : Digest) :
+    eval 13 recoverPkSeedMaskedExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, recoverPkSeedWord raw) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hraw := eval_binop2 (n := 7) (co := some forsVerifierRuntime) (OP := .AND)
+      (f := UInt256.land)
+      (primCall_and (n := 11) (s := s)
+        (EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2))
+        recoverHigh16MaskWord)
+      (eval_recover_pkSeed_calldataload_pair raw digest)
+      (eval_recover_high16_mask_fuel11 raw digest)
+  simpa [recoverPkSeedMaskedExpr, recoverPkSeedWord] using hraw
 
 theorem eval_recover_r_calldataload_pair
     (raw : RawSig) (digest : Digest) :

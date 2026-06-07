@@ -92,6 +92,10 @@
   exact payload chunk pair `(raw.read16 0, raw.read16 16)` at the byte level.
   Connected this to `fun_recover` with
   `ClassARecover.eval_recover_r_calldataload_pair`.
+- Added `ClassARecover.recoverPkSeedWord` and
+  `eval_recover_pkSeed_masked`, proving the full
+  `and(calldataload(add(var_sig_offset, 0x10)), not(low16mask))` expression
+  evaluates to the concrete contract-side masked pkSeed word.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
