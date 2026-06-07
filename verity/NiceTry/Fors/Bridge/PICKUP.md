@@ -47,6 +47,9 @@
   `exec_const_sig_len_prefix_to_ret1_product` steps the first eight statements of
   `constant_FORS_SIG_LEN()` through `ret_1 := product`, leaving execution at
   `forsConstSigLen.body.drop 8`.
+- Extended `ClassAConst` with `exec_const_sig_len_through_first_guard`, which
+  computes `sum := add(32, product)` as `2432` and skips the first
+  `constant_FORS_SIG_LEN()` overflow guard.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -63,7 +66,7 @@
   standard axioms. The constant-call side conditions use only Lean's standard
   axioms. The no-argument call reducer and concrete constant-call handoff also
   use only Lean's standard axioms. The constant-getter prefix theorem uses only
-  Lean's standard axioms.
+  Lean's standard axioms, as does the first-guard theorem.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 

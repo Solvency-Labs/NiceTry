@@ -44,10 +44,61 @@ def constAfterScratchZero2 (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :
 def constAfterRet1Product (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
   (constAfterScratchZero2 raw digest).insert "ret_1" (UInt256.ofNat 2400)
 
+/-- `add(32, product)` in `constant_FORS_SIG_LEN()`. -/
+def constSigLenSumExpr : Expr :=
+  .Call (Sum.inl .ADD) [.Lit (UInt256.ofNat 32), .Var "product"]
+
+/-- `gt(32, sum)`, the first overflow guard in `constant_FORS_SIG_LEN()`. -/
+def constSigLenFirstGuardExpr : Expr :=
+  .Call (Sum.inl .GT) [.Lit (UInt256.ofNat 32), .Var "sum"]
+
+/-- Shared panic/revert body used by the constant getter's overflow guards. -/
+def constOverflowPanicBody : List Stmt :=
+  [.ExprStmtCall (.Call (Sum.inl .MSTORE)
+    [.Lit (UInt256.ofNat 0),
+     .Call (Sum.inl .SHL)
+      [.Lit (UInt256.ofNat 224), .Lit (UInt256.ofNat 0x4e487b71)]]),
+   .ExprStmtCall (.Call (Sum.inl .MSTORE)
+    [.Lit (UInt256.ofNat 4), .Lit (UInt256.ofNat 0x11)]),
+   .ExprStmtCall (.Call (Sum.inl .REVERT)
+    [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 0x24)])]
+
+def constAfterSumZero (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (constAfterRet1Product raw digest).insert "sum" (UInt256.ofNat 0)
+
+def constAfterSumAdd (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (constAfterSumZero raw digest).insert "sum" (UInt256.ofNat 2432)
+
+private theorem uint256_add_32_product :
+    (UInt256.ofNat 32).add (UInt256.ofNat 2400) = UInt256.ofNat 2432 := by
+  rfl
+
+private theorem uint256_gt_32_sum :
+    UInt256.gt (UInt256.ofNat 32) (UInt256.ofNat 2432) = UInt256.ofNat 0 := by
+  rfl
+
 theorem constAfterScratchZero2_lookup_product
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "product" (constAfterScratchZero2 raw digest) =
       UInt256.ofNat 2400 := by
+  rfl
+
+theorem constAfterRet1Product_lookup_product
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "product" (constAfterRet1Product raw digest) =
+      UInt256.ofNat 2400 := by
+  rfl
+
+theorem constAfterSumZero_lookup_product
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "product" (constAfterSumZero raw digest) =
+      UInt256.ofNat 2400 := by
+  rfl
+
+theorem constAfterSumAdd_lookup_sum
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "sum" (constAfterSumAdd raw digest) =
+      UInt256.ofNat 2432 := by
   rfl
 
 /-- Execute the straight-line prefix of `constant_FORS_SIG_LEN()` through
@@ -194,5 +245,149 @@ theorem exec_const_sig_len_prefix_to_ret1_product
         (exec_let_var (n := 31) (co := some forsVerifierRuntime)
           (s := constAfterScratchZero2 raw digest)
           (vars := ["ret_1"]) (id := "product")))]
+
+theorem exec_const_sig_len_sum_zero
+    (raw : RawSig) (digest : Digest) :
+    exec 31 (.Let ["sum"] (.some (.Lit (UInt256.ofNat 0))))
+        (some forsVerifierRuntime) (constAfterRet1Product raw digest) =
+      .ok (constAfterSumZero raw digest) := by
+  simpa [constAfterSumZero] using
+    (exec_let_lit (n := 30) (co := some forsVerifierRuntime)
+      (s := constAfterRet1Product raw digest)
+      (vars := ["sum"]) (lit := UInt256.ofNat 0))
+
+theorem exec_const_sig_len_sum_add
+    (raw : RawSig) (digest : Digest) :
+    exec 30 (.Let ["sum"] (.some constSigLenSumExpr))
+        (some forsVerifierRuntime) (constAfterSumZero raw digest) =
+      .ok (constAfterSumAdd raw digest) := by
+  let s := constAfterSumZero raw digest
+  have hproduct :
+      EvmYul.Yul.State.lookup! "product" s = UInt256.ofNat 2400 := by
+    dsimp [s]
+    exact constAfterSumZero_lookup_product raw digest
+  have hvar : eval 28 (.Var "product") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2400) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "product" s) =
+      Except.ok (s, UInt256.ofNat 2400)
+    rw [hproduct]
+  change exec 30
+      (.Let ["sum"] (.some
+        (.Call (Sum.inl .ADD) [.Lit (UInt256.ofNat 32), .Var "product"])))
+      (some forsVerifierRuntime) s = .ok (constAfterSumAdd raw digest)
+  rw [exec_let_prim (n := 29)]
+  show execPrimCall 29 .ADD ["sum"]
+      (reverse' (evalArgs 29 [.Var "product", .Lit (UInt256.ofNat 32)]
+        (some forsVerifierRuntime) s)) =
+    .ok (constAfterSumAdd raw digest)
+  rw [evalArgs_cons_ok (n := 28) (arg := .Var "product")
+    (args := [.Lit (UInt256.ofNat 32)])
+    (co := some forsVerifierRuntime) (s := s) (h := hvar)]
+  rw [evalTail_cons_ok (n := 27)]
+  rw [evalArgs_cons_ok (n := 26) (arg := .Lit (UInt256.ofNat 32))
+    (args := []) (co := some forsVerifierRuntime) (s := s)
+    (h := eval_lit (n := 25))]
+  rw [evalTail_cons_ok (n := 25), evalArgs_nil]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.cons_append]
+  rw [execPrimCall_ok
+    (vars := ["sum"]) (prim := .ADD)
+    (args := [UInt256.ofNat 32, UInt256.ofNat 2400])
+    (s₁ := s) (vals := [UInt256.ofNat 2432]) (s := s)
+    (h := by
+      simpa [uint256_add_32_product] using
+        (primCall_add (n := 28) (s := s)
+          (UInt256.ofNat 32) (UInt256.ofNat 2400)))]
+  rfl
+
+theorem eval_const_sig_len_first_guard
+    (raw : RawSig) (digest : Digest) :
+    eval 28 constSigLenFirstGuardExpr (some forsVerifierRuntime)
+        (constAfterSumAdd raw digest) =
+      .ok (constAfterSumAdd raw digest, UInt256.ofNat 0) := by
+  let s := constAfterSumAdd raw digest
+  have hsum :
+      EvmYul.Yul.State.lookup! "sum" s = UInt256.ofNat 2432 := by
+    dsimp [s]
+    exact constAfterSumAdd_lookup_sum raw digest
+  have hvar : eval 26 (.Var "sum") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2432) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "sum" s) =
+      Except.ok (s, UInt256.ofNat 2432)
+    rw [hsum]
+  change eval 28
+      (.Call (Sum.inl .GT) [.Lit (UInt256.ofNat 32), .Var "sum"])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0)
+  have hgt := eval_binop2 (n := 22) (co := some forsVerifierRuntime) (OP := .GT)
+      (f := UInt256.gt)
+      (primCall_gt (n := 26) (s := s)
+        (UInt256.ofNat 32) (UInt256.ofNat 2432))
+      (eval_lit (n := 23) (co := some forsVerifierRuntime) (s := s)
+        (val := UInt256.ofNat 32))
+      hvar
+  simpa [constSigLenFirstGuardExpr, uint256_gt_32_sum] using hgt
+
+theorem exec_const_sig_len_first_guard
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 29 (.If constSigLenFirstGuardExpr body) (some forsVerifierRuntime)
+        (constAfterSumAdd raw digest) =
+      .ok (constAfterSumAdd raw digest) := by
+  exact exec_if_false
+    (n := 28) (co := some forsVerifierRuntime)
+    (s := constAfterSumAdd raw digest)
+    (cond := constSigLenFirstGuardExpr) (body := body)
+    (s' := constAfterSumAdd raw digest)
+    (eval_const_sig_len_first_guard raw digest)
+
+/-- Continue `constant_FORS_SIG_LEN()` through `sum := add(32, product)` and the
+    first overflow guard, leaving execution at `forsConstSigLen.body.drop 11`. -/
+theorem exec_const_sig_len_through_first_guard
+    (raw : RawSig) (digest : Digest) :
+    exec 32 (.Block (forsConstSigLen.body.drop 8)) (some forsVerifierRuntime)
+        (constAfterRet1Product raw digest) =
+      exec 29 (.Block (forsConstSigLen.body.drop 11)) (some forsVerifierRuntime)
+        (constAfterSumAdd raw digest) := by
+  change exec 32
+      (.Block (.Let ["sum"] (.some (.Lit (UInt256.ofNat 0))) ::
+        forsConstSigLen.body.drop 9))
+      (some forsVerifierRuntime) (constAfterRet1Product raw digest) =
+    exec 29 (.Block (forsConstSigLen.body.drop 11)) (some forsVerifierRuntime)
+      (constAfterSumAdd raw digest)
+  rw [exec_block_cons_ok
+    (n := 31) (co := some forsVerifierRuntime)
+    (s := constAfterRet1Product raw digest)
+    (st := .Let ["sum"] (.some (.Lit (UInt256.ofNat 0))))
+    (sts := forsConstSigLen.body.drop 9)
+    (s₁ := constAfterSumZero raw digest)
+    (h := exec_const_sig_len_sum_zero raw digest)]
+  change exec 31
+      (.Block (.Let ["sum"] (.some constSigLenSumExpr) ::
+        forsConstSigLen.body.drop 10))
+      (some forsVerifierRuntime) (constAfterSumZero raw digest) =
+    exec 29 (.Block (forsConstSigLen.body.drop 11)) (some forsVerifierRuntime)
+      (constAfterSumAdd raw digest)
+  rw [exec_block_cons_ok
+    (n := 30) (co := some forsVerifierRuntime)
+    (s := constAfterSumZero raw digest)
+    (st := .Let ["sum"] (.some constSigLenSumExpr)
+    )
+    (sts := forsConstSigLen.body.drop 10)
+    (s₁ := constAfterSumAdd raw digest)
+    (h := exec_const_sig_len_sum_add raw digest)]
+  change exec 30
+      (.Block (.If constSigLenFirstGuardExpr constOverflowPanicBody ::
+        forsConstSigLen.body.drop 11))
+      (some forsVerifierRuntime) (constAfterSumAdd raw digest) =
+    exec 29 (.Block (forsConstSigLen.body.drop 11)) (some forsVerifierRuntime)
+      (constAfterSumAdd raw digest)
+  rw [exec_block_cons_ok
+    (n := 29) (co := some forsVerifierRuntime)
+    (s := constAfterSumAdd raw digest)
+    (st := .If constSigLenFirstGuardExpr constOverflowPanicBody)
+    (sts := forsConstSigLen.body.drop 11)
+    (s₁ := constAfterSumAdd raw digest)
+    (h := exec_const_sig_len_first_guard raw digest constOverflowPanicBody)]
 
 end NiceTry.Fors.Bridge
