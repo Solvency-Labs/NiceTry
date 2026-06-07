@@ -62,6 +62,10 @@
 - Extended `ClassARecover` with `exec_recover_prefix_to_ret1_product`, stepping
   the following straight-line `fun_recover` setup through `ret_1 := product` and
   leaving execution at `forsFunRecover.body.drop 12`.
+- Added `ClassARecover.exec_recover_through_length_guard`, computing
+  `sum := add(ret, product)`, skipping the setup overflow guard, binding
+  `ret_3 := ret_2`, and proving the good path skips
+  `if iszero(eq(var_sig_length, expr)) { var := 0; leave }`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -82,9 +86,10 @@
   getter body theorem also uses only Lean's standard axioms. The constant call
   return to the recover frame also uses only Lean's standard axioms. The first
   recover-body theorem and the recover setup-prefix theorem use only Lean's
-  standard axioms.
-- Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
-  `eq(var_sig_length, 2448)` guard.
+  standard axioms. The recover internal length-guard theorem also uses only
+  Lean's standard axioms.
+- Next: continue the good `fun_recover` path into the calldata reads and memory
+  writes for `usr_pkSeed`, `r`, `digest`, and the hmsg/forced-zero prelude.
 
 ## Agent progress (2026-06-06)
 

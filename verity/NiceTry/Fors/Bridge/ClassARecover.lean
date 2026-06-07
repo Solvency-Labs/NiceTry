@@ -44,9 +44,60 @@ def recoverAfterScratchZero2 (raw : RawSig) (digest : Digest) : EvmYul.Yul.State
 def recoverAfterRet1Product (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
   (recoverAfterScratchZero2 raw digest).insert "ret_1" (UInt256.ofNat 2400)
 
+/-- `add(ret, product)` in `fun_recover`'s setup. -/
+def recoverSetupSumExpr : Expr :=
+  .Call (Sum.inl .ADD) [.Var "ret", .Var "product"]
+
+/-- `gt(ret, sum)`, the setup overflow guard before the signature length check. -/
+def recoverSetupOverflowGuardExpr : Expr :=
+  .Call (Sum.inl .GT) [.Var "ret", .Var "sum"]
+
+/-- `iszero(eq(var_sig_length, expr))`, the internal good-length check in
+    `fun_recover`. -/
+def recoverLengthRejectGuardExpr : Expr :=
+  .Call (Sum.inl .ISZERO)
+    [.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"]]
+
+def recoverLengthRejectBody : List Stmt :=
+  [.Let ["var"] (.some (.Lit (UInt256.ofNat 0))), .Leave]
+
+def recoverAfterSumZero (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverAfterRet1Product raw digest).insert "sum" (UInt256.ofNat 0)
+
+def recoverAfterSumAdd (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverAfterSumZero raw digest).insert "sum" (UInt256.ofNat 2432)
+
+def recoverAfterRet3Zero (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverAfterSumAdd raw digest).insert "ret_3" (UInt256.ofNat 0)
+
+def recoverAfterRet3FromRet2 (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverAfterRet3Zero raw digest).insert "ret_3" (UInt256.ofNat 96)
+
+private theorem uint256_add_ret_product :
+    (UInt256.ofNat 0x20).add (UInt256.ofNat 2400) = UInt256.ofNat 2432 := by
+  rfl
+
+private theorem uint256_gt_ret_sum :
+    UInt256.gt (UInt256.ofNat 0x20) (UInt256.ofNat 2432) = UInt256.ofNat 0 := by
+  rfl
+
+private theorem uint256_eq_sigLen_sigLen :
+    UInt256.eq (UInt256.ofNat SigLen) (UInt256.ofNat SigLen) = UInt256.ofNat 1 := by
+  rfl
+
+private theorem uint256_isZero_one :
+    (UInt256.ofNat 1).isZero = UInt256.ofNat 0 := by
+  rfl
+
 theorem recoverAfterRetWord_lookup_ret
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "ret" (recoverAfterRetWord raw digest) =
+      UInt256.ofNat 0x20 := by
+  rfl
+
+theorem recoverAfterRet1Product_lookup_ret
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret" (recoverAfterRet1Product raw digest) =
       UInt256.ofNat 0x20 := by
   rfl
 
@@ -60,6 +111,54 @@ theorem recoverAfterRet1Product_lookup_product
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "product" (recoverAfterRet1Product raw digest) =
       UInt256.ofNat 2400 := by
+  rfl
+
+theorem recoverAfterSumZero_lookup_ret
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret" (recoverAfterSumZero raw digest) =
+      UInt256.ofNat 0x20 := by
+  rfl
+
+theorem recoverAfterSumZero_lookup_product
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "product" (recoverAfterSumZero raw digest) =
+      UInt256.ofNat 2400 := by
+  rfl
+
+theorem recoverAfterSumAdd_lookup_ret
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret" (recoverAfterSumAdd raw digest) =
+      UInt256.ofNat 0x20 := by
+  rfl
+
+theorem recoverAfterSumAdd_lookup_sum
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "sum" (recoverAfterSumAdd raw digest) =
+      UInt256.ofNat 2432 := by
+  rfl
+
+theorem recoverAfterSumAdd_lookup_ret2
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret_2" (recoverAfterSumAdd raw digest) =
+      UInt256.ofNat 96 := by
+  rfl
+
+theorem recoverAfterRet3Zero_lookup_ret2
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret_2" (recoverAfterRet3Zero raw digest) =
+      UInt256.ofNat 96 := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_sig_length
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_sig_length" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat SigLen := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_expr
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "expr" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat SigLen := by
   rfl
 
 /-- Continue `fun_recover` after `expr := constant_FORS_SIG_LEN()` through
@@ -249,5 +348,289 @@ theorem exec_recover_prefix_to_ret1_product
         (exec_let_var (n := 34) (co := some forsVerifierRuntime)
           (s := recoverAfterScratchZero2 raw digest)
           (vars := ["ret_1"]) (id := "product")))]
+
+theorem exec_recover_sum_zero
+    (raw : RawSig) (digest : Digest) :
+    exec 34 (.Let ["sum"] (.some (.Lit (UInt256.ofNat 0))))
+        (some forsVerifierRuntime) (recoverAfterRet1Product raw digest) =
+      .ok (recoverAfterSumZero raw digest) := by
+  simpa [recoverAfterSumZero] using
+    (exec_let_lit (n := 33) (co := some forsVerifierRuntime)
+      (s := recoverAfterRet1Product raw digest)
+      (vars := ["sum"]) (lit := UInt256.ofNat 0))
+
+theorem exec_recover_sum_add
+    (raw : RawSig) (digest : Digest) :
+    exec 33 (.Let ["sum"] (.some recoverSetupSumExpr))
+        (some forsVerifierRuntime) (recoverAfterSumZero raw digest) =
+      .ok (recoverAfterSumAdd raw digest) := by
+  let s := recoverAfterSumZero raw digest
+  have hret :
+      EvmYul.Yul.State.lookup! "ret" s = UInt256.ofNat 0x20 := by
+    dsimp [s]
+    exact recoverAfterSumZero_lookup_ret raw digest
+  have hproduct :
+      EvmYul.Yul.State.lookup! "product" s = UInt256.ofNat 2400 := by
+    dsimp [s]
+    exact recoverAfterSumZero_lookup_product raw digest
+  have hvarProduct : eval 31 (.Var "product") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2400) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "product" s) =
+      Except.ok (s, UInt256.ofNat 2400)
+    rw [hproduct]
+  have hvarRet : eval 29 (.Var "ret") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 0x20) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "ret" s) =
+      Except.ok (s, UInt256.ofNat 0x20)
+    rw [hret]
+  change exec 33
+      (.Let ["sum"] (.some
+        (.Call (Sum.inl .ADD) [.Var "ret", .Var "product"])))
+      (some forsVerifierRuntime) s = .ok (recoverAfterSumAdd raw digest)
+  rw [exec_let_prim (n := 32)]
+  show execPrimCall 32 .ADD ["sum"]
+      (reverse' (evalArgs 32 [.Var "product", .Var "ret"]
+        (some forsVerifierRuntime) s)) =
+    .ok (recoverAfterSumAdd raw digest)
+  rw [evalArgs_cons_ok (n := 31) (arg := .Var "product")
+    (args := [.Var "ret"]) (co := some forsVerifierRuntime) (s := s)
+    (h := hvarProduct)]
+  rw [evalTail_cons_ok (n := 30)]
+  rw [evalArgs_cons_ok (n := 29) (arg := .Var "ret")
+    (args := []) (co := some forsVerifierRuntime) (s := s) (h := hvarRet)]
+  rw [evalTail_cons_ok (n := 28), evalArgs_nil]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.cons_append]
+  rw [execPrimCall_ok
+    (vars := ["sum"]) (prim := .ADD)
+    (args := [UInt256.ofNat 0x20, UInt256.ofNat 2400])
+    (s₁ := s) (vals := [UInt256.ofNat 2432]) (s := s)
+    (h := by
+      simpa [uint256_add_ret_product] using
+        (primCall_add (n := 31) (s := s)
+          (UInt256.ofNat 0x20) (UInt256.ofNat 2400)))]
+  rfl
+
+theorem eval_recover_setup_overflow_guard
+    (raw : RawSig) (digest : Digest) :
+    eval 31 recoverSetupOverflowGuardExpr (some forsVerifierRuntime)
+        (recoverAfterSumAdd raw digest) =
+      .ok (recoverAfterSumAdd raw digest, UInt256.ofNat 0) := by
+  let s := recoverAfterSumAdd raw digest
+  have hret :
+      EvmYul.Yul.State.lookup! "ret" s = UInt256.ofNat 0x20 := by
+    dsimp [s]
+    exact recoverAfterSumAdd_lookup_ret raw digest
+  have hsum :
+      EvmYul.Yul.State.lookup! "sum" s = UInt256.ofNat 2432 := by
+    dsimp [s]
+    exact recoverAfterSumAdd_lookup_sum raw digest
+  have hvarRet : eval 27 (.Var "ret") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 0x20) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "ret" s) =
+      Except.ok (s, UInt256.ofNat 0x20)
+    rw [hret]
+  have hvarSum : eval 29 (.Var "sum") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2432) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "sum" s) =
+      Except.ok (s, UInt256.ofNat 2432)
+    rw [hsum]
+  change eval 31
+      (.Call (Sum.inl .GT) [.Var "ret", .Var "sum"])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0)
+  have hgt := eval_binop2 (n := 25) (co := some forsVerifierRuntime) (OP := .GT)
+      (f := UInt256.gt)
+      (primCall_gt (n := 29) (s := s)
+        (UInt256.ofNat 0x20) (UInt256.ofNat 2432))
+      hvarRet hvarSum
+  simpa [recoverSetupOverflowGuardExpr, uint256_gt_ret_sum] using hgt
+
+theorem exec_recover_setup_overflow_guard
+    (raw : RawSig) (digest : Digest) (body : List Stmt) :
+    exec 32 (.If recoverSetupOverflowGuardExpr body) (some forsVerifierRuntime)
+        (recoverAfterSumAdd raw digest) =
+      .ok (recoverAfterSumAdd raw digest) := by
+  exact exec_if_false
+    (n := 31) (co := some forsVerifierRuntime)
+    (s := recoverAfterSumAdd raw digest)
+    (cond := recoverSetupOverflowGuardExpr) (body := body)
+    (s' := recoverAfterSumAdd raw digest)
+    (eval_recover_setup_overflow_guard raw digest)
+
+theorem exec_recover_ret3_zero
+    (raw : RawSig) (digest : Digest) :
+    exec 31 (.Let ["ret_3"] (.some (.Lit (UInt256.ofNat 0))))
+        (some forsVerifierRuntime) (recoverAfterSumAdd raw digest) =
+      .ok (recoverAfterRet3Zero raw digest) := by
+  simpa [recoverAfterRet3Zero] using
+    (exec_let_lit (n := 30) (co := some forsVerifierRuntime)
+      (s := recoverAfterSumAdd raw digest)
+      (vars := ["ret_3"]) (lit := UInt256.ofNat 0))
+
+theorem exec_recover_ret3_from_ret2
+    (raw : RawSig) (digest : Digest) :
+    exec 30 (.Let ["ret_3"] (.some (.Var "ret_2")))
+        (some forsVerifierRuntime) (recoverAfterRet3Zero raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest) := by
+  let s := recoverAfterRet3Zero raw digest
+  have hret2 :
+      EvmYul.Yul.State.lookup! "ret_2" s = UInt256.ofNat 96 := by
+    dsimp [s]
+    exact recoverAfterRet3Zero_lookup_ret2 raw digest
+  change exec 30 (.Let ["ret_3"] (.some (.Var "ret_2")))
+      (some forsVerifierRuntime) s = .ok (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_let_var (n := 29)]
+  change Except.ok (s.insert "ret_3" (EvmYul.Yul.State.lookup! "ret_2" s)) =
+    Except.ok (recoverAfterRet3FromRet2 raw digest)
+  rw [hret2]
+  rfl
+
+theorem eval_recover_length_reject_guard
+    (raw : RawSig) (digest : Digest) :
+    eval 28 recoverLengthRejectGuardExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, UInt256.ofNat 0) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hsig :
+      EvmYul.Yul.State.lookup! "var_sig_length" s = UInt256.ofNat SigLen := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_sig_length raw digest
+  have hexpr :
+      EvmYul.Yul.State.lookup! "expr" s = UInt256.ofNat SigLen := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_expr raw digest
+  have hvarSig : eval 22 (.Var "var_sig_length") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat SigLen) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "var_sig_length" s) =
+      Except.ok (s, UInt256.ofNat SigLen)
+    rw [hsig]
+  have hvarExpr : eval 24 (.Var "expr") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat SigLen) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "expr" s) =
+      Except.ok (s, UInt256.ofNat SigLen)
+    rw [hexpr]
+  have heq : eval 26
+        (.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"])
+        (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 1) := by
+    have hraw := eval_binop2 (n := 20) (co := some forsVerifierRuntime) (OP := .EQ)
+        (f := UInt256.eq)
+        (primCall_eq (n := 24) (s := s)
+          (UInt256.ofNat SigLen) (UInt256.ofNat SigLen))
+        hvarSig hvarExpr
+    simpa [uint256_eq_sigLen_sigLen] using hraw
+  change eval 28
+      (.Call (Sum.inl .ISZERO)
+        [.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"]])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 0)
+  simpa [recoverLengthRejectGuardExpr, uint256_isZero_one] using
+    (eval_unop1 (n := 24) (co := some forsVerifierRuntime) (OP := .ISZERO)
+      (f := UInt256.isZero)
+      (primCall_iszero (n := 26) (s := s) (UInt256.ofNat 1)) heq)
+
+theorem exec_recover_length_reject_if
+    (raw : RawSig) (digest : Digest) :
+    exec 29 (.If recoverLengthRejectGuardExpr recoverLengthRejectBody)
+        (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest) := by
+  exact exec_if_false
+    (n := 28) (co := some forsVerifierRuntime)
+    (s := recoverAfterRet3FromRet2 raw digest)
+    (cond := recoverLengthRejectGuardExpr) (body := recoverLengthRejectBody)
+    (s' := recoverAfterRet3FromRet2 raw digest)
+    (eval_recover_length_reject_guard raw digest)
+
+/-- Continue `fun_recover` from `sum := 0` through the internal good-length check,
+    leaving execution at `forsFunRecover.body.drop 18`. -/
+theorem exec_recover_through_length_guard
+    (raw : RawSig) (digest : Digest) :
+    exec 35 (.Block (forsFunRecover.body.drop 12)) (some forsVerifierRuntime)
+        (recoverAfterRet1Product raw digest) =
+      exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) := by
+  change exec 35
+      (.Block (.Let ["sum"] (.some (.Lit (UInt256.ofNat 0))) ::
+        forsFunRecover.body.drop 13))
+      (some forsVerifierRuntime) (recoverAfterRet1Product raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 34) (co := some forsVerifierRuntime)
+    (s := recoverAfterRet1Product raw digest)
+    (st := .Let ["sum"] (.some (.Lit (UInt256.ofNat 0))))
+    (sts := forsFunRecover.body.drop 13)
+    (s₁ := recoverAfterSumZero raw digest)
+    (h := exec_recover_sum_zero raw digest)]
+  change exec 34
+      (.Block (.Let ["sum"] (.some recoverSetupSumExpr) ::
+        forsFunRecover.body.drop 14))
+      (some forsVerifierRuntime) (recoverAfterSumZero raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 33) (co := some forsVerifierRuntime)
+    (s := recoverAfterSumZero raw digest)
+    (st := .Let ["sum"] (.some recoverSetupSumExpr))
+    (sts := forsFunRecover.body.drop 14)
+    (s₁ := recoverAfterSumAdd raw digest)
+    (h := exec_recover_sum_add raw digest)]
+  change exec 33
+      (.Block (.If recoverSetupOverflowGuardExpr constOverflowPanicBody ::
+        forsFunRecover.body.drop 15))
+      (some forsVerifierRuntime) (recoverAfterSumAdd raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 32) (co := some forsVerifierRuntime)
+    (s := recoverAfterSumAdd raw digest)
+    (st := .If recoverSetupOverflowGuardExpr constOverflowPanicBody)
+    (sts := forsFunRecover.body.drop 15)
+    (s₁ := recoverAfterSumAdd raw digest)
+    (h := exec_recover_setup_overflow_guard raw digest constOverflowPanicBody)]
+  change exec 32
+      (.Block (.Let ["ret_3"] (.some (.Lit (UInt256.ofNat 0))) ::
+        forsFunRecover.body.drop 16))
+      (some forsVerifierRuntime) (recoverAfterSumAdd raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 31) (co := some forsVerifierRuntime)
+    (s := recoverAfterSumAdd raw digest)
+    (st := .Let ["ret_3"] (.some (.Lit (UInt256.ofNat 0))))
+    (sts := forsFunRecover.body.drop 16)
+    (s₁ := recoverAfterRet3Zero raw digest)
+    (h := exec_recover_ret3_zero raw digest)]
+  change exec 31
+      (.Block (.Let ["ret_3"] (.some (.Var "ret_2")) ::
+        forsFunRecover.body.drop 17))
+      (some forsVerifierRuntime) (recoverAfterRet3Zero raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 30) (co := some forsVerifierRuntime)
+    (s := recoverAfterRet3Zero raw digest)
+    (st := .Let ["ret_3"] (.some (.Var "ret_2")))
+    (sts := forsFunRecover.body.drop 17)
+    (s₁ := recoverAfterRet3FromRet2 raw digest)
+    (h := exec_recover_ret3_from_ret2 raw digest)]
+  change exec 30
+      (.Block (.If recoverLengthRejectGuardExpr recoverLengthRejectBody ::
+        forsFunRecover.body.drop 18))
+      (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest) =
+    exec 29 (.Block (forsFunRecover.body.drop 18)) (some forsVerifierRuntime)
+      (recoverAfterRet3FromRet2 raw digest)
+  rw [exec_block_cons_ok
+    (n := 29) (co := some forsVerifierRuntime)
+    (s := recoverAfterRet3FromRet2 raw digest)
+    (st := .If recoverLengthRejectGuardExpr recoverLengthRejectBody)
+    (sts := forsFunRecover.body.drop 18)
+    (s₁ := recoverAfterRet3FromRet2 raw digest)
+    (h := exec_recover_length_reject_if raw digest)]
 
 end NiceTry.Fors.Bridge
