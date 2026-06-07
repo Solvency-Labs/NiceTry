@@ -82,6 +82,10 @@ def recoverCounterCalldataBaseExpr : Expr :=
 def recoverCounterCalldataOffsetExpr : Expr :=
   .Call (Sum.inl .ADD) [recoverCounterCalldataBaseExpr, .Var "ret"]
 
+/-- `calldataload(add(add(var_sig_offset, product), ret))`, before the high-16-byte mask. -/
+def recoverCounterCalldataReadExpr : Expr :=
+  .Call (Sum.inl .CALLDATALOAD) [recoverCounterCalldataOffsetExpr]
+
 /-- `not(2)`, the FORS hmsg domain word written before `keccak256(0, 0xa0)`. -/
 def recoverHmsgDomainExpr : Expr :=
   .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 2)]
@@ -862,5 +866,37 @@ theorem eval_recover_counter_calldata_offset
         (UInt256.ofNat 2500) (UInt256.ofNat 0x20))
       (eval_recover_counter_calldata_base raw digest) hvarRet
   simpa [recoverCounterCalldataOffsetExpr, uint256_add_counter_base_ret] using hadd
+
+theorem eval_recover_counter_calldataload
+    (raw : RawSig) (digest : Digest) :
+    eval 13 recoverCounterCalldataReadExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest,
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 152 ++
+            ffi.ByteArray.zeroes
+              ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize))) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hload :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 2532) =
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 152 ++
+            ffi.ByteArray.zeroes
+              ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize)) := by
+    dsimp [s]
+    exact calldataload_encode_counter raw digest
+      (recoverAfterRet3FromRet2 raw digest).toState
+      (recoverAfterRet3FromRet2_toState_calldata raw digest)
+  change eval 13 (.Call (Sum.inl .CALLDATALOAD) [recoverCounterCalldataOffsetExpr])
+      (some forsVerifierRuntime) s =
+    .ok (s, EvmYul.uInt256OfByteArray
+      (forsPayloadChunk raw 152 ++
+        ffi.ByteArray.zeroes
+          ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize)))
+  have h := eval_unop1_thread (n := 9) (co := some forsVerifierRuntime)
+      (primCall_calldataload (n := 11) s (UInt256.ofNat 2532))
+      (eval_recover_counter_calldata_offset raw digest)
+  rw [hload] at h
+  exact h
 
 end NiceTry.Fors.Bridge

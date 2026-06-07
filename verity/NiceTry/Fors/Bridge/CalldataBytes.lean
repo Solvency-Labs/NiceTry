@@ -157,6 +157,37 @@ theorem readBytes_window_32 (source : ByteArray) (start : Nat)
     simp
   rw [ffi_zeroes_eq_empty z hz, byteArray_append_empty]
 
+private theorem copySlice_tail_16 (source : ByteArray) (start : Nat)
+    (hend : start + 16 = source.size) :
+    source.copySlice start ByteArray.empty 0 32 = source.extract start source.size := by
+  apply ByteArray.ext
+  have hds : source.data.size = source.size := rfl
+  simp [ByteArray.data_copySlice, ByteArray.data_extract]
+  rw [Array.extract_eq_of_size_le_end (a := source.data) (p := start) (l := start + 32)
+    (by rw [hds, ← hend]; omega)]
+  change source.data.extract start source.data.size = source.data.extract start source.size
+  rw [hds]
+
+theorem readBytes_tail_16 (source : ByteArray) (start : Nat)
+    (hstart : start < 2 ^ 64)
+    (hend : start + 16 = source.size) :
+    source.readBytes start 32 =
+      source.extract start source.size ++
+        ffi.ByteArray.zeroes
+          ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize) := by
+  unfold ByteArray.readBytes
+  have hstart' : start < 18446744073709551616 := by
+    simpa using hstart
+  have hsmall : (decide (start < 2 ^ 64) && decide (32 < 2 ^ 64)) = true := by
+    simp [hstart']
+  simp only [hsmall, ↓reduceIte]
+  rw [copySlice_tail_16 source start hend]
+  have hsize : (source.extract start source.size).size = 16 := by
+    simp [ByteArray.size_extract]
+    omega
+  rw [hsize]
+  rfl
+
 theorem byteArray_append_assoc (a b c : ByteArray) : a ++ b ++ c = a ++ (b ++ c) := by
   apply ByteArray.ext
   simp [ByteArray.data_append, Array.append_assoc]
@@ -223,6 +254,44 @@ theorem forsPayload_extract_chunk_pair_1 (raw : RawSig) :
   rw [show 16 = c0.data.size by rw [hc0]]
   rw [show 48 = c0.data.size + (c1.data ++ c2.data).size by rw [hc0, hc12]]
   exact extract_middle c0.data (c1.data ++ c2.data) tail.data
+
+theorem forsPayload_extract_counter (raw : RawSig) :
+    (forsPayload raw).extract 2432 2448 = forsPayloadChunk raw 152 := by
+  let pre :=
+    (List.range 152).foldl
+      (fun acc i => acc ++ forsPayloadChunk raw i) ByteArray.empty
+  let ctrChunk := forsPayloadChunk raw 152
+  have hprefix_size : pre.size = 2432 := by
+    dsimp [pre]
+    simpa [forsPayloadChunk] using
+      (forsPayload_fold_size raw (List.range 152) ByteArray.empty)
+  have hcounter_size : ctrChunk.size = 16 := by
+    dsimp [ctrChunk]
+    exact forsPayloadChunk_size raw 152
+  have hpayload : forsPayload raw = pre ++ ctrChunk := by
+    unfold forsPayload
+    change (List.range 153).foldl
+        (fun acc i => acc ++ forsPayloadChunk raw i) ByteArray.empty =
+      pre ++ ctrChunk
+    rw [show List.range 153 = List.range 152 ++ [152] by
+      simpa using (List.range_succ (n := 152))]
+    rw [List.foldl_append]
+    dsimp [pre, ctrChunk]
+  apply ByteArray.ext
+  simp only [ByteArray.data_extract]
+  rw [hpayload]
+  rw [ByteArray.data_append]
+  have hprefData : pre.data.size = 2432 := hprefix_size
+  have hcounterData : ctrChunk.data.size = 16 := hcounter_size
+  have hright :
+      (pre.data ++ ctrChunk.data).extract 2432 2448 =
+        ctrChunk.data.extract (2432 - pre.data.size) (2448 - pre.data.size) :=
+    Array.extract_append_right' (a := pre.data) (b := ctrChunk.data)
+      (i := 2432) (j := 2448) (by simp [hprefData])
+  rw [hprefData] at hright
+  rw [hright]
+  rw [show 2448 - 2432 = ctrChunk.data.size by rw [hcounterData]]
+  exact Array.extract_eq_self_of_le (by omega)
 
 theorem byteArray_extract_second (a b c : ByteArray) :
     ((a ++ b ++ c).extract a.size (a.size + b.size)) = b := by
@@ -436,6 +505,32 @@ theorem encodeForsCalldata_extract_payload_pair_1 (raw : RawSig) (digest : Diges
   rw [hprefData] at hright
   exact hright
 
+theorem encodeForsCalldata_extract_counter (raw : RawSig) (digest : Digest) :
+    (encodeForsCalldata raw digest).extract 2532 2548 =
+      (forsPayload raw).extract 2432 2448 := by
+  unfold encodeForsCalldata
+  let pref := forsSelector ++ word32 0x40 ++ word32 digest ++ word32 raw.len
+  have hprefix_size : pref.size = 100 := by
+    dsimp [pref]
+    simp [ByteArray.size_append, forsSelector_size, word32_size]
+  apply ByteArray.ext
+  simp only [ByteArray.data_extract]
+  have hdata :
+      (forsSelector ++ word32 0x40 ++ word32 digest ++ word32 raw.len ++
+          forsPayload raw).data =
+        pref.data ++ (forsPayload raw).data := by
+    dsimp [pref]
+    simp [ByteArray.data_append, Array.append_assoc]
+  rw [hdata]
+  have hprefData : pref.data.size = 100 := hprefix_size
+  have hright :
+      (pref.data ++ (forsPayload raw).data).extract 2532 2548 =
+        (forsPayload raw).data.extract (2532 - pref.data.size) (2548 - pref.data.size) :=
+    Array.extract_append_right' (a := pref.data) (b := (forsPayload raw).data)
+      (i := 2532) (j := 2548) (by simp [hprefData])
+  rw [hprefData] at hright
+  exact hright
+
 theorem encodeForsCalldata_readBytes_payload_pair_1
     (raw : RawSig) (digest : Digest) :
     (encodeForsCalldata raw digest).readBytes 116 32 =
@@ -446,6 +541,19 @@ theorem encodeForsCalldata_readBytes_payload_pair_1
   · norm_num
   · rw [encodeForsCalldata_size]
     norm_num
+
+theorem encodeForsCalldata_readBytes_counter
+    (raw : RawSig) (digest : Digest) :
+    (encodeForsCalldata raw digest).readBytes 2532 32 =
+      forsPayloadChunk raw 152 ++
+        ffi.ByteArray.zeroes
+          ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize) := by
+  rw [readBytes_tail_16]
+  · rw [encodeForsCalldata_size]
+    rw [encodeForsCalldata_extract_counter]
+    rw [forsPayload_extract_counter raw]
+  · norm_num
+  · rw [encodeForsCalldata_size]
 
 theorem encodeForsCalldata_readBytes_selector_size (raw : RawSig) (digest : Digest) :
     ((encodeForsCalldata raw digest).readBytes 0 32).size = 32 := by
@@ -591,6 +699,16 @@ theorem encodeForsCalldata_uInt256_payload_pair_1
         (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2) := by
   rw [encodeForsCalldata_readBytes_payload_pair_1]
 
+theorem encodeForsCalldata_uInt256_counter
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.uInt256OfByteArray
+        ((encodeForsCalldata raw digest).readBytes 2532 32) =
+      EvmYul.uInt256OfByteArray
+        (forsPayloadChunk raw 152 ++
+          ffi.ByteArray.zeroes
+            ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize)) := by
+  rw [encodeForsCalldata_readBytes_counter]
+
 theorem calldataload_encode_offset (raw : RawSig) (digest : Digest)
     (s : EvmYul.State .Yul)
     (hcd : s.executionEnv.calldata = encodeForsCalldata raw digest) :
@@ -628,6 +746,19 @@ theorem calldataload_encode_payload_pair_1 (raw : RawSig) (digest : Digest)
   rw [uint256_ofNat_toNat_of_lt 116 (by norm_num [UInt256.size])]
   rw [hcd]
   exact encodeForsCalldata_uInt256_payload_pair_1 raw digest
+
+theorem calldataload_encode_counter (raw : RawSig) (digest : Digest)
+    (s : EvmYul.State .Yul)
+    (hcd : s.executionEnv.calldata = encodeForsCalldata raw digest) :
+    EvmYul.State.calldataload s (UInt256.ofNat 2532) =
+      EvmYul.uInt256OfByteArray
+        (forsPayloadChunk raw 152 ++
+          ffi.ByteArray.zeroes
+            ({ toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) } : USize)) := by
+  unfold EvmYul.State.calldataload
+  rw [uint256_ofNat_toNat_of_lt 2532 (by norm_num [UInt256.size])]
+  rw [hcd]
+  exact encodeForsCalldata_uInt256_counter raw digest
 
 theorem calldataload_encode_selector (raw : RawSig) (digest : Digest)
     (s : EvmYul.State .Yul)
