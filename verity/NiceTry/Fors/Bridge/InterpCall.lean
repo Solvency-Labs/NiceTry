@@ -67,6 +67,17 @@ theorem exec_let_call {vars fn args} :
       = execCall n fn vars co (reverse' (evalArgs n args.reverse co s)) := by
   conv_lhs => rw [exec]
 
+/-- `let v… := f()` — no-argument user-function call, with the empty argument
+    plumbing reduced away. -/
+theorem exec_let_call_noargs {vars fn} :
+    exec (n+2) (.Let vars (.some (.Call (Sum.inr fn) []))) co s =
+      execCall (n+1) fn vars co (.ok (s, [])) := by
+  rw [exec_let_call (n := n+1)]
+  change execCall (n+1) fn vars co (reverse' (evalArgs (n+1) [] co s)) =
+    execCall (n+1) fn vars co (.ok (s, []))
+  rw [evalArgs_nil (n := n)]
+  rfl
+
 /-- bare `f(args)` statement (coarity 0) — evaluate args, then `execCall` with no vars. -/
 theorem exec_exprstmt_call {fn args} :
     exec (n+1) (.ExprStmtCall (.Call (Sum.inr fn) args)) co s

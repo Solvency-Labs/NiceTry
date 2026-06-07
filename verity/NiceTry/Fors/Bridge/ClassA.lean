@@ -1168,6 +1168,16 @@ theorem exec_recover_var_init
       (s := recoverEntryState raw digest)
       (vars := ["var"]) (lit := UInt256.ofNat 0))
 
+theorem exec_recover_let_expr_const_call_args
+    (raw : RawSig) (digest : Digest) (n : Nat) :
+    exec (n+2) (.Let ["expr"] (.some (.Call (Sum.inr "constant_FORS_SIG_LEN") [])))
+        (some forsVerifierRuntime) (recoverAfterVarInit raw digest) =
+      execCall (n+1) "constant_FORS_SIG_LEN" ["expr"] (some forsVerifierRuntime)
+        (.ok (recoverAfterVarInit raw digest, [])) :=
+  exec_let_call_noargs (n := n) (co := some forsVerifierRuntime)
+    (s := recoverAfterVarInit raw digest) (vars := ["expr"])
+    (fn := "constant_FORS_SIG_LEN")
+
 private theorem uint256_one_ne_zero : UInt256.ofNat 1 ≠ UInt256.ofNat 0 := by
   decide
 

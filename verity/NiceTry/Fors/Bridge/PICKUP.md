@@ -39,6 +39,10 @@
 - Added `ClassA.recoverAfterVarInit_account_find` and
   `forsVerifierRuntime_lookup_const_sig_len`, the `call_ok` side conditions for
   the next `let expr := constant_FORS_SIG_LEN()` step in `fun_recover`.
+- Added `InterpCall.exec_let_call_noargs` and
+  `ClassA.exec_recover_let_expr_const_call_args`, reducing
+  `let expr := constant_FORS_SIG_LEN()` to an `execCall` with an empty argument
+  vector after `fun_recover`'s first statement.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -53,7 +57,8 @@
   `exec_let_lit` and `exec_let_var` also use only Lean's standard axioms.
   The new `recoverEntryState_*` facts and `exec_recover_var_init` use only Lean's
   standard axioms. The constant-call side conditions use only Lean's standard
-  axioms.
+  axioms. The no-argument call reducer and concrete constant-call handoff also
+  use only Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
