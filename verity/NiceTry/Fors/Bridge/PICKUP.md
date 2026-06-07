@@ -50,6 +50,9 @@
 - Extended `ClassAConst` with `exec_const_sig_len_through_first_guard`, which
   computes `sum := add(32, product)` as `2432` and skips the first
   `constant_FORS_SIG_LEN()` overflow guard.
+- Completed `constant_FORS_SIG_LEN()` execution in `ClassAConst`:
+  `exec_const_sig_len_body` runs the helper body from the good `fun_recover`
+  call entry and ends in `constAfterRet` with `ret = SigLen`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -66,7 +69,8 @@
   standard axioms. The constant-call side conditions use only Lean's standard
   axioms. The no-argument call reducer and concrete constant-call handoff also
   use only Lean's standard axioms. The constant-getter prefix theorem uses only
-  Lean's standard axioms, as does the first-guard theorem.
+  Lean's standard axioms, as does the first-guard theorem. The full constant
+  getter body theorem also uses only Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
