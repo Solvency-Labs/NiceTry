@@ -58,6 +58,10 @@ def recoverLengthRejectGuardExpr : Expr :=
   .Call (Sum.inl .ISZERO)
     [.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"]]
 
+/-- `add(var_sig_offset, 0x10)`, the calldata word used to recover `usr_pkSeed`. -/
+def recoverPkSeedCalldataOffsetExpr : Expr :=
+  .Call (Sum.inl .ADD) [.Var "var_sig_offset", .Lit (UInt256.ofNat 0x10)]
+
 def recoverLengthRejectBody : List Stmt :=
   [.Let ["var"] (.some (.Lit (UInt256.ofNat 0))), .Leave]
 
@@ -75,6 +79,10 @@ def recoverAfterRet3FromRet2 (raw : RawSig) (digest : Digest) : EvmYul.Yul.State
 
 private theorem uint256_add_ret_product :
     (UInt256.ofNat 0x20).add (UInt256.ofNat 2400) = UInt256.ofNat 2432 := by
+  rfl
+
+private theorem uint256_add_sig_offset_pkSeed :
+    (UInt256.ofNat 100).add (UInt256.ofNat 0x10) = UInt256.ofNat 116 := by
   rfl
 
 private theorem uint256_gt_ret_sum :
@@ -153,6 +161,12 @@ theorem recoverAfterRet3FromRet2_lookup_sig_length
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "var_sig_length" (recoverAfterRet3FromRet2 raw digest) =
       UInt256.ofNat SigLen := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_sig_offset
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_sig_offset" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat 100 := by
   rfl
 
 theorem recoverAfterRet3FromRet2_lookup_expr
@@ -632,5 +646,33 @@ theorem exec_recover_through_length_guard
     (sts := forsFunRecover.body.drop 18)
     (s₁ := recoverAfterRet3FromRet2 raw digest)
     (h := exec_recover_length_reject_if raw digest)]
+
+theorem eval_recover_pkSeed_calldata_offset
+    (raw : RawSig) (digest : Digest) :
+    eval 7 recoverPkSeedCalldataOffsetExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, UInt256.ofNat 116) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hoffset :
+      EvmYul.Yul.State.lookup! "var_sig_offset" s = UInt256.ofNat 100 := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_sig_offset raw digest
+  have hvar : eval 3 (.Var "var_sig_offset") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 100) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "var_sig_offset" s) =
+      Except.ok (s, UInt256.ofNat 100)
+    rw [hoffset]
+  change eval 7
+      (.Call (Sum.inl .ADD) [.Var "var_sig_offset", .Lit (UInt256.ofNat 0x10)])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 116)
+  have hadd := eval_binop2 (n := 1) (co := some forsVerifierRuntime) (OP := .ADD)
+      (f := UInt256.add)
+      (primCall_add (n := 5) (s := s)
+        (UInt256.ofNat 100) (UInt256.ofNat 0x10))
+      hvar
+      (eval_lit (n := 4) (co := some forsVerifierRuntime) (s := s)
+        (val := UInt256.ofNat 0x10))
+  simpa [recoverPkSeedCalldataOffsetExpr, uint256_add_sig_offset_pkSeed] using hadd
 
 end NiceTry.Fors.Bridge

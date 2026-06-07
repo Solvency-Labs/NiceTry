@@ -66,6 +66,9 @@
   `sum := add(ret, product)`, skipping the setup overflow guard, binding
   `ret_3 := ret_2`, and proving the good path skips
   `if iszero(eq(var_sig_length, expr)) { var := 0; leave }`.
+- Added `ClassARecover.eval_recover_pkSeed_calldata_offset`, the pure offset
+  arithmetic for the next calldata read:
+  `add(var_sig_offset, 0x10) = 116` after the good length guard.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -86,8 +89,8 @@
   getter body theorem also uses only Lean's standard axioms. The constant call
   return to the recover frame also uses only Lean's standard axioms. The first
   recover-body theorem and the recover setup-prefix theorem use only Lean's
-  standard axioms. The recover internal length-guard theorem also uses only
-  Lean's standard axioms.
+  standard axioms. The recover internal length-guard theorem and pkSeed offset
+  theorem also use only Lean's standard axioms.
 - Next: continue the good `fun_recover` path into the calldata reads and memory
   writes for `usr_pkSeed`, `r`, `digest`, and the hmsg/forced-zero prelude.
 
