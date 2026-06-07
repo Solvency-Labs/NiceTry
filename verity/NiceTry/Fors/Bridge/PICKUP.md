@@ -69,6 +69,12 @@
 - Added `ClassARecover.eval_recover_pkSeed_calldata_offset`, the pure offset
   arithmetic for the next calldata read:
   `add(var_sig_offset, 0x10) = 116` after the good length guard.
+- Added `ClassARecover.eval_recover_high16_mask`,
+  `eval_recover_hmsg_domain_word`,
+  `eval_recover_counter_calldata_base`, and
+  `eval_recover_counter_calldata_offset`, proving the reusable hmsg setup
+  constants and the trailer/counter read offset
+  `add(add(var_sig_offset, product), ret) = 2532`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through

@@ -62,6 +62,26 @@ def recoverLengthRejectGuardExpr : Expr :=
 def recoverPkSeedCalldataOffsetExpr : Expr :=
   .Call (Sum.inl .ADD) [.Var "var_sig_offset", .Lit (UInt256.ofNat 0x10)]
 
+/-- The literal mask whose complement keeps the high 16 bytes of a calldata word. -/
+def recoverLow16Mask : UInt256 :=
+  UInt256.ofNat 0xffffffffffffffffffffffffffffffff
+
+/-- `not(0xffff...ffff)`, the high-16-byte mask reused by header reads. -/
+def recoverHigh16MaskExpr : Expr :=
+  .Call (Sum.inl .NOT) [.Lit recoverLow16Mask]
+
+/-- `add(var_sig_offset, product)`, the base of the trailer/counter read. -/
+def recoverCounterCalldataBaseExpr : Expr :=
+  .Call (Sum.inl .ADD) [.Var "var_sig_offset", .Var "product"]
+
+/-- `add(add(var_sig_offset, product), ret)`, the calldata word used for the counter. -/
+def recoverCounterCalldataOffsetExpr : Expr :=
+  .Call (Sum.inl .ADD) [recoverCounterCalldataBaseExpr, .Var "ret"]
+
+/-- `not(2)`, the FORS hmsg domain word written before `keccak256(0, 0xa0)`. -/
+def recoverHmsgDomainExpr : Expr :=
+  .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 2)]
+
 def recoverLengthRejectBody : List Stmt :=
   [.Let ["var"] (.some (.Lit (UInt256.ofNat 0))), .Leave]
 
@@ -83,6 +103,24 @@ private theorem uint256_add_ret_product :
 
 private theorem uint256_add_sig_offset_pkSeed :
     (UInt256.ofNat 100).add (UInt256.ofNat 0x10) = UInt256.ofNat 116 := by
+  rfl
+
+private theorem uint256_add_sig_offset_product :
+    (UInt256.ofNat 100).add (UInt256.ofNat 2400) = UInt256.ofNat 2500 := by
+  rfl
+
+private theorem uint256_add_counter_base_ret :
+    (UInt256.ofNat 2500).add (UInt256.ofNat 0x20) = UInt256.ofNat 2532 := by
+  rfl
+
+private theorem uint256_not_low16_mask :
+    recoverLow16Mask.lnot =
+      UInt256.ofNat 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000 := by
+  rfl
+
+private theorem uint256_not_two_domain :
+    (UInt256.ofNat 2).lnot =
+      UInt256.ofNat 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd := by
   rfl
 
 private theorem uint256_gt_ret_sum :
@@ -167,6 +205,30 @@ theorem recoverAfterRet3FromRet2_lookup_sig_offset
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "var_sig_offset" (recoverAfterRet3FromRet2 raw digest) =
       UInt256.ofNat 100 := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_ret
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat 0x20 := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_ret2
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "ret_2" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat 96 := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_product
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "product" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat 2400 := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_lookup_digest
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "var_digest" (recoverAfterRet3FromRet2 raw digest) =
+      UInt256.ofNat digest := by
   rfl
 
 theorem recoverAfterRet3FromRet2_lookup_expr
@@ -674,5 +736,95 @@ theorem eval_recover_pkSeed_calldata_offset
       (eval_lit (n := 4) (co := some forsVerifierRuntime) (s := s)
         (val := UInt256.ofNat 0x10))
   simpa [recoverPkSeedCalldataOffsetExpr, uint256_add_sig_offset_pkSeed] using hadd
+
+theorem eval_recover_high16_mask
+    (raw : RawSig) (digest : Digest) :
+    eval 4 recoverHigh16MaskExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest,
+        UInt256.ofNat 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  simpa [recoverHigh16MaskExpr, uint256_not_low16_mask] using
+    (eval_unop1 (n := 0) (co := some forsVerifierRuntime) (OP := .NOT)
+      (f := UInt256.lnot)
+      (primCall_not (n := 2) (s := s) recoverLow16Mask)
+      (eval_lit (n := 1) (co := some forsVerifierRuntime) (s := s)
+        (val := recoverLow16Mask)))
+
+theorem eval_recover_hmsg_domain_word
+    (raw : RawSig) (digest : Digest) :
+    eval 4 recoverHmsgDomainExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest,
+        UInt256.ofNat 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  simpa [recoverHmsgDomainExpr, uint256_not_two_domain] using
+    (eval_unop1 (n := 0) (co := some forsVerifierRuntime) (OP := .NOT)
+      (f := UInt256.lnot)
+      (primCall_not (n := 2) (s := s) (UInt256.ofNat 2))
+      (eval_lit (n := 1) (co := some forsVerifierRuntime) (s := s)
+        (val := UInt256.ofNat 2)))
+
+theorem eval_recover_counter_calldata_base
+    (raw : RawSig) (digest : Digest) :
+    eval 7 recoverCounterCalldataBaseExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, UInt256.ofNat 2500) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hoffset :
+      EvmYul.Yul.State.lookup! "var_sig_offset" s = UInt256.ofNat 100 := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_sig_offset raw digest
+  have hproduct :
+      EvmYul.Yul.State.lookup! "product" s = UInt256.ofNat 2400 := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_product raw digest
+  have hvarOffset : eval 3 (.Var "var_sig_offset") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 100) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "var_sig_offset" s) =
+      Except.ok (s, UInt256.ofNat 100)
+    rw [hoffset]
+  have hvarProduct : eval 5 (.Var "product") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 2400) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "product" s) =
+      Except.ok (s, UInt256.ofNat 2400)
+    rw [hproduct]
+  change eval 7
+      (.Call (Sum.inl .ADD) [.Var "var_sig_offset", .Var "product"])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 2500)
+  have hadd := eval_binop2 (n := 1) (co := some forsVerifierRuntime) (OP := .ADD)
+      (f := UInt256.add)
+      (primCall_add (n := 5) (s := s)
+        (UInt256.ofNat 100) (UInt256.ofNat 2400))
+      hvarOffset hvarProduct
+  simpa [recoverCounterCalldataBaseExpr, uint256_add_sig_offset_product] using hadd
+
+theorem eval_recover_counter_calldata_offset
+    (raw : RawSig) (digest : Digest) :
+    eval 11 recoverCounterCalldataOffsetExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, UInt256.ofNat 2532) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hret :
+      EvmYul.Yul.State.lookup! "ret" s = UInt256.ofNat 0x20 := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_ret raw digest
+  have hvarRet : eval 9 (.Var "ret") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 0x20) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "ret" s) =
+      Except.ok (s, UInt256.ofNat 0x20)
+    rw [hret]
+  change eval 11
+      (.Call (Sum.inl .ADD) [recoverCounterCalldataBaseExpr, .Var "ret"])
+      (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 2532)
+  have hadd := eval_binop2 (n := 5) (co := some forsVerifierRuntime) (OP := .ADD)
+      (f := UInt256.add)
+      (primCall_add (n := 9) (s := s)
+        (UInt256.ofNat 2500) (UInt256.ofNat 0x20))
+      (eval_recover_counter_calldata_base raw digest) hvarRet
+  simpa [recoverCounterCalldataOffsetExpr, uint256_add_counter_base_ret] using hadd
 
 end NiceTry.Fors.Bridge
