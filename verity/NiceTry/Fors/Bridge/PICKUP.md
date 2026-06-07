@@ -86,6 +86,12 @@
   `calldataload_encode_counter`, proving the hmsg counter read at calldata offset
   `2532` is the final payload chunk plus 16 zero padding bytes. Connected it to
   `fun_recover` with `ClassARecover.eval_recover_counter_calldataload`.
+- Added `forsPayload_extract_chunk_pair_0`,
+  `encodeForsCalldata_readBytes_payload_pair_0`, and
+  `calldataload_encode_payload_pair_0`, proving calldata offset `100` reads the
+  exact payload chunk pair `(raw.read16 0, raw.read16 16)` at the byte level.
+  Connected this to `fun_recover` with
+  `ClassARecover.eval_recover_r_calldataload_pair`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through

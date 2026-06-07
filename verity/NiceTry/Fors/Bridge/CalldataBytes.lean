@@ -235,6 +235,11 @@ theorem forsPayload_extract_chunk_pair_1 (raw : RawSig) :
   apply ByteArray.ext
   simp only [ByteArray.data_extract, ByteArray.data_append]
   rw [hpayload]
+  have hdata :
+      (c0 ++ c1 ++ c2 ++ tail).data =
+        c0.data ++ (c1.data ++ c2.data) ++ tail.data := by
+    simp [ByteArray.data_append, Array.append_assoc]
+  rw [hdata]
   have hc0 : c0.data.size = 16 := by
     dsimp [c0]
     exact forsPayloadChunk_size raw 0
@@ -246,14 +251,43 @@ theorem forsPayload_extract_chunk_pair_1 (raw : RawSig) :
     exact forsPayloadChunk_size raw 2
   have hc12 : (c1.data ++ c2.data).size = 32 := by
     rw [Array.size_append, hc1, hc2]
-  have hdata :
-      (c0 ++ c1 ++ c2 ++ tail).data =
-        c0.data ++ (c1.data ++ c2.data) ++ tail.data := by
-    simp [ByteArray.data_append, Array.append_assoc]
-  rw [hdata]
   rw [show 16 = c0.data.size by rw [hc0]]
   rw [show 48 = c0.data.size + (c1.data ++ c2.data).size by rw [hc0, hc12]]
   exact extract_middle c0.data (c1.data ++ c2.data) tail.data
+
+theorem forsPayload_extract_chunk_pair_0 (raw : RawSig) :
+    (forsPayload raw).extract 0 32 =
+      forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1 := by
+  let c0 := forsPayloadChunk raw 0
+  let c1 := forsPayloadChunk raw 1
+  let tail :=
+    ((List.range 153).drop 2).foldl
+      (fun acc i => acc ++ forsPayloadChunk raw i) ByteArray.empty
+  have hpayload : forsPayload raw = c0 ++ c1 ++ tail := by
+    unfold forsPayload
+    rw [show List.range 153 = 0 :: 1 :: (List.range 153).drop 2 by decide]
+    simp only [List.foldl_cons]
+    change
+      ((List.range 153).drop 2).foldl
+          (fun acc i => acc ++ forsPayloadChunk raw i)
+          ((ByteArray.empty ++ c0) ++ c1) =
+        c0 ++ c1 ++ tail
+    rw [foldl_payload_append_acc]
+    rw [byteArray_empty_append]
+  apply ByteArray.ext
+  simp only [ByteArray.data_extract, ByteArray.data_append]
+  rw [hpayload]
+  have hdata : (c0 ++ c1 ++ tail).data = c0.data ++ c1.data ++ tail.data := by
+    simp [ByteArray.data_append, Array.append_assoc]
+  rw [hdata]
+  have hc0 : c0.data.size = 16 := by
+    dsimp [c0]
+    exact forsPayloadChunk_size raw 0
+  have hc1 : c1.data.size = 16 := by
+    dsimp [c1]
+    exact forsPayloadChunk_size raw 1
+  rw [show 32 = c0.data.size + c1.data.size by rw [hc0, hc1]]
+  exact extract_two_prefix c0.data c1.data tail.data (c0.data.size + c1.data.size) rfl
 
 theorem forsPayload_extract_counter (raw : RawSig) :
     (forsPayload raw).extract 2432 2448 = forsPayloadChunk raw 152 := by
@@ -505,6 +539,32 @@ theorem encodeForsCalldata_extract_payload_pair_1 (raw : RawSig) (digest : Diges
   rw [hprefData] at hright
   exact hright
 
+theorem encodeForsCalldata_extract_payload_pair_0 (raw : RawSig) (digest : Digest) :
+    (encodeForsCalldata raw digest).extract 100 132 =
+      (forsPayload raw).extract 0 32 := by
+  unfold encodeForsCalldata
+  let pref := forsSelector ++ word32 0x40 ++ word32 digest ++ word32 raw.len
+  have hprefix_size : pref.size = 100 := by
+    dsimp [pref]
+    simp [ByteArray.size_append, forsSelector_size, word32_size]
+  apply ByteArray.ext
+  simp only [ByteArray.data_extract]
+  have hdata :
+      (forsSelector ++ word32 0x40 ++ word32 digest ++ word32 raw.len ++
+          forsPayload raw).data =
+        pref.data ++ (forsPayload raw).data := by
+    dsimp [pref]
+    simp [ByteArray.data_append, Array.append_assoc]
+  rw [hdata]
+  have hprefData : pref.data.size = 100 := hprefix_size
+  have hright :
+      (pref.data ++ (forsPayload raw).data).extract 100 132 =
+        (forsPayload raw).data.extract (100 - pref.data.size) (132 - pref.data.size) :=
+    Array.extract_append_right' (a := pref.data) (b := (forsPayload raw).data)
+      (i := 100) (j := 132) (by simp [hprefData])
+  rw [hprefData] at hright
+  exact hright
+
 theorem encodeForsCalldata_extract_counter (raw : RawSig) (digest : Digest) :
     (encodeForsCalldata raw digest).extract 2532 2548 =
       (forsPayload raw).extract 2432 2448 := by
@@ -538,6 +598,17 @@ theorem encodeForsCalldata_readBytes_payload_pair_1
   rw [readBytes_window_32]
   · rw [encodeForsCalldata_extract_payload_pair_1]
     exact forsPayload_extract_chunk_pair_1 raw
+  · norm_num
+  · rw [encodeForsCalldata_size]
+    norm_num
+
+theorem encodeForsCalldata_readBytes_payload_pair_0
+    (raw : RawSig) (digest : Digest) :
+    (encodeForsCalldata raw digest).readBytes 100 32 =
+      forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1 := by
+  rw [readBytes_window_32]
+  · rw [encodeForsCalldata_extract_payload_pair_0]
+    exact forsPayload_extract_chunk_pair_0 raw
   · norm_num
   · rw [encodeForsCalldata_size]
     norm_num
@@ -699,6 +770,14 @@ theorem encodeForsCalldata_uInt256_payload_pair_1
         (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2) := by
   rw [encodeForsCalldata_readBytes_payload_pair_1]
 
+theorem encodeForsCalldata_uInt256_payload_pair_0
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.uInt256OfByteArray
+        ((encodeForsCalldata raw digest).readBytes 100 32) =
+      EvmYul.uInt256OfByteArray
+        (forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1) := by
+  rw [encodeForsCalldata_readBytes_payload_pair_0]
+
 theorem encodeForsCalldata_uInt256_counter
     (raw : RawSig) (digest : Digest) :
     EvmYul.uInt256OfByteArray
@@ -746,6 +825,17 @@ theorem calldataload_encode_payload_pair_1 (raw : RawSig) (digest : Digest)
   rw [uint256_ofNat_toNat_of_lt 116 (by norm_num [UInt256.size])]
   rw [hcd]
   exact encodeForsCalldata_uInt256_payload_pair_1 raw digest
+
+theorem calldataload_encode_payload_pair_0 (raw : RawSig) (digest : Digest)
+    (s : EvmYul.State .Yul)
+    (hcd : s.executionEnv.calldata = encodeForsCalldata raw digest) :
+    EvmYul.State.calldataload s (UInt256.ofNat 100) =
+      EvmYul.uInt256OfByteArray
+        (forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1) := by
+  unfold EvmYul.State.calldataload
+  rw [uint256_ofNat_toNat_of_lt 100 (by norm_num [UInt256.size])]
+  rw [hcd]
+  exact encodeForsCalldata_uInt256_payload_pair_0 raw digest
 
 theorem calldataload_encode_counter (raw : RawSig) (digest : Digest)
     (s : EvmYul.State .Yul)

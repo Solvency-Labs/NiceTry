@@ -66,6 +66,10 @@ def recoverPkSeedCalldataOffsetExpr : Expr :=
 def recoverPkSeedCalldataReadExpr : Expr :=
   .Call (Sum.inl .CALLDATALOAD) [recoverPkSeedCalldataOffsetExpr]
 
+/-- `calldataload(var_sig_offset)`, the R header word before the high-16-byte mask. -/
+def recoverRCalldataReadExpr : Expr :=
+  .Call (Sum.inl .CALLDATALOAD) [.Var "var_sig_offset"]
+
 /-- The literal mask whose complement keeps the high 16 bytes of a calldata word. -/
 def recoverLow16Mask : UInt256 :=
   UInt256.ofNat 0xffffffffffffffffffffffffffffffff
@@ -788,6 +792,42 @@ theorem eval_recover_pkSeed_calldataload_pair
   have h := eval_unop1_thread (n := 5) (co := some forsVerifierRuntime)
       (primCall_calldataload (n := 7) s (UInt256.ofNat 116))
       (eval_recover_pkSeed_calldata_offset raw digest)
+  rw [hload] at h
+  exact h
+
+theorem eval_recover_r_calldataload_pair
+    (raw : RawSig) (digest : Digest) :
+    eval 4 recoverRCalldataReadExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest,
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1)) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hoffset :
+      EvmYul.Yul.State.lookup! "var_sig_offset" s = UInt256.ofNat 100 := by
+    dsimp [s]
+    exact recoverAfterRet3FromRet2_lookup_sig_offset raw digest
+  have hvar : eval 2 (.Var "var_sig_offset") (some forsVerifierRuntime) s =
+      .ok (s, UInt256.ofNat 100) := by
+    rw [eval_var]
+    change Except.ok (s, EvmYul.Yul.State.lookup! "var_sig_offset" s) =
+      Except.ok (s, UInt256.ofNat 100)
+    rw [hoffset]
+  have hload :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 100) =
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1) := by
+    dsimp [s]
+    exact calldataload_encode_payload_pair_0 raw digest
+      (recoverAfterRet3FromRet2 raw digest).toState
+      (recoverAfterRet3FromRet2_toState_calldata raw digest)
+  change eval 4 (.Call (Sum.inl .CALLDATALOAD) [.Var "var_sig_offset"])
+      (some forsVerifierRuntime) s =
+    .ok (s, EvmYul.uInt256OfByteArray
+      (forsPayloadChunk raw 0 ++ forsPayloadChunk raw 1))
+  have h := eval_unop1_thread (n := 0) (co := some forsVerifierRuntime)
+      (primCall_calldataload (n := 2) s (UInt256.ofNat 100))
+      hvar
   rw [hload] at h
   exact h
 
