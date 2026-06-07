@@ -62,6 +62,10 @@ def recoverLengthRejectGuardExpr : Expr :=
 def recoverPkSeedCalldataOffsetExpr : Expr :=
   .Call (Sum.inl .ADD) [.Var "var_sig_offset", .Lit (UInt256.ofNat 0x10)]
 
+/-- `calldataload(add(var_sig_offset, 0x10))`, before the high-16-byte mask. -/
+def recoverPkSeedCalldataReadExpr : Expr :=
+  .Call (Sum.inl .CALLDATALOAD) [recoverPkSeedCalldataOffsetExpr]
+
 /-- The literal mask whose complement keeps the high 16 bytes of a calldata word. -/
 def recoverLow16Mask : UInt256 :=
   UInt256.ofNat 0xffffffffffffffffffffffffffffffff
@@ -235,6 +239,12 @@ theorem recoverAfterRet3FromRet2_lookup_expr
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "expr" (recoverAfterRet3FromRet2 raw digest) =
       UInt256.ofNat SigLen := by
+  rfl
+
+theorem recoverAfterRet3FromRet2_toState_calldata
+    (raw : RawSig) (digest : Digest) :
+    (recoverAfterRet3FromRet2 raw digest).toState.executionEnv.calldata =
+      encodeForsCalldata raw digest := by
   rfl
 
 /-- Continue `fun_recover` after `expr := constant_FORS_SIG_LEN()` through
@@ -750,6 +760,32 @@ theorem eval_recover_high16_mask
       (primCall_not (n := 2) (s := s) recoverLow16Mask)
       (eval_lit (n := 1) (co := some forsVerifierRuntime) (s := s)
         (val := recoverLow16Mask)))
+
+theorem eval_recover_pkSeed_calldataload_pair
+    (raw : RawSig) (digest : Digest) :
+    eval 9 recoverPkSeedCalldataReadExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest,
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2)) := by
+  let s := recoverAfterRet3FromRet2 raw digest
+  have hload :
+      EvmYul.State.calldataload s.toState (UInt256.ofNat 116) =
+        EvmYul.uInt256OfByteArray
+          (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2) := by
+    dsimp [s]
+    exact calldataload_encode_payload_pair_1 raw digest
+      (recoverAfterRet3FromRet2 raw digest).toState
+      (recoverAfterRet3FromRet2_toState_calldata raw digest)
+  change eval 9 (.Call (Sum.inl .CALLDATALOAD) [recoverPkSeedCalldataOffsetExpr])
+      (some forsVerifierRuntime) s =
+    .ok (s, EvmYul.uInt256OfByteArray
+      (forsPayloadChunk raw 1 ++ forsPayloadChunk raw 2))
+  have h := eval_unop1_thread (n := 5) (co := some forsVerifierRuntime)
+      (primCall_calldataload (n := 7) s (UInt256.ofNat 116))
+      (eval_recover_pkSeed_calldata_offset raw digest)
+  rw [hload] at h
+  exact h
 
 theorem eval_recover_hmsg_domain_word
     (raw : RawSig) (digest : Digest) :

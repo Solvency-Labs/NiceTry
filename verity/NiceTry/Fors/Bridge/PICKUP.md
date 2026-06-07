@@ -75,6 +75,12 @@
   `eval_recover_counter_calldata_offset`, proving the reusable hmsg setup
   constants and the trailer/counter read offset
   `add(add(var_sig_offset, product), ret) = 2532`.
+- Added `CalldataBytes.forsPayloadChunk` plus
+  `encodeForsCalldata_readBytes_payload_pair_1` and
+  `calldataload_encode_payload_pair_1`, proving that calldata offset `116`
+  reads the exact payload chunk pair `(raw.read16 16, raw.read16 32)` at the byte
+  level. Connected this to `fun_recover` with
+  `ClassARecover.eval_recover_pkSeed_calldataload_pair`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
