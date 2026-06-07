@@ -43,6 +43,10 @@
   `ClassA.exec_recover_let_expr_const_call_args`, reducing
   `let expr := constant_FORS_SIG_LEN()` to an `execCall` with an empty argument
   vector after `fun_recover`'s first statement.
+- Added `Bridge/ClassAConst.lean` and registered it in `lakefile.lean`.
+  `exec_const_sig_len_prefix_to_ret1_product` steps the first eight statements of
+  `constant_FORS_SIG_LEN()` through `ret_1 := product`, leaving execution at
+  `forsConstSigLen.body.drop 8`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -58,7 +62,8 @@
   The new `recoverEntryState_*` facts and `exec_recover_var_init` use only Lean's
   standard axioms. The constant-call side conditions use only Lean's standard
   axioms. The no-argument call reducer and concrete constant-call handoff also
-  use only Lean's standard axioms.
+  use only Lean's standard axioms. The constant-getter prefix theorem uses only
+  Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
