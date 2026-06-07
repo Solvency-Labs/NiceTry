@@ -83,6 +83,10 @@ def constAfterSum1Add (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
 def constAfterRet (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
   (constAfterSum1Add raw digest).insert "ret" (UInt256.ofNat SigLen)
 
+/-- Recover-frame state after `expr := constant_FORS_SIG_LEN()` returns. -/
+def recoverAfterExprConst (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
+  (recoverAfterVarInit raw digest).insert "expr" (UInt256.ofNat SigLen)
+
 private theorem uint256_add_32_product :
     (UInt256.ofNat 32).add (UInt256.ofNat 2400) = UInt256.ofNat 2432 := by
   rfl
@@ -144,6 +148,12 @@ theorem constAfterSum1Add_lookup_sum1
 theorem constAfterRet_lookup_ret
     (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "ret" (constAfterRet raw digest) =
+      UInt256.ofNat SigLen := by
+  rfl
+
+theorem recoverAfterExprConst_lookup_expr
+    (raw : RawSig) (digest : Digest) :
+    EvmYul.Yul.State.lookup! "expr" (recoverAfterExprConst raw digest) =
       UInt256.ofNat SigLen := by
   rfl
 
@@ -605,5 +615,32 @@ theorem exec_const_sig_len_body
   rw [exec_const_sig_len_prefix_to_ret1_product raw digest]
   rw [exec_const_sig_len_through_first_guard raw digest]
   exact exec_const_sig_len_tail_to_ret raw digest
+
+theorem exec_recover_const_sig_len_call
+    (raw : RawSig) (digest : Digest) :
+    execCall 42 "constant_FORS_SIG_LEN" ["expr"] (some forsVerifierRuntime)
+        (.ok (recoverAfterVarInit raw digest, [])) =
+      .ok (recoverAfterExprConst raw digest) := by
+  rw [execCall_ok (n := 41)]
+  rw [call_ok
+    (n := 40)
+    (s := recoverAfterVarInit raw digest)
+    (args := [])
+    (fn := "constant_FORS_SIG_LEN")
+    (yc := { (Inhabited.default : EvmYul.Account .Yul) with code := forsVerifierRuntime })
+    (f := forsConstSigLen)
+    (s₂ := constAfterRet raw digest)
+    (recoverAfterVarInit_account_find raw digest)
+    (by simpa using forsVerifierRuntime_lookup_const_sig_len)
+    (exec_const_sig_len_body raw digest)]
+  rfl
+
+theorem exec_recover_let_expr_const
+    (raw : RawSig) (digest : Digest) :
+    exec 43 (.Let ["expr"] (.some (.Call (Sum.inr "constant_FORS_SIG_LEN") [])))
+        (some forsVerifierRuntime) (recoverAfterVarInit raw digest) =
+      .ok (recoverAfterExprConst raw digest) := by
+  rw [exec_recover_let_expr_const_call_args raw digest 41]
+  exact exec_recover_const_sig_len_call raw digest
 
 end NiceTry.Fors.Bridge

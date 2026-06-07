@@ -53,6 +53,9 @@
 - Completed `constant_FORS_SIG_LEN()` execution in `ClassAConst`:
   `exec_const_sig_len_body` runs the helper body from the good `fun_recover`
   call entry and ends in `constAfterRet` with `ret = SigLen`.
+- Added `exec_recover_const_sig_len_call` and `exec_recover_let_expr_const`,
+  proving the `fun_recover` statement `let expr := constant_FORS_SIG_LEN()`
+  returns to the recover frame with `expr = SigLen`.
 - Verified `lake build NiceTry` green. Axiom audit for the offset-bound guard step
   is only Lean's standard axioms; the calldata-size guard step additionally uses
   the existing `uint256_toByteArray_size` codec axiom through
@@ -70,7 +73,8 @@
   axioms. The no-argument call reducer and concrete constant-call handoff also
   use only Lean's standard axioms. The constant-getter prefix theorem uses only
   Lean's standard axioms, as does the first-guard theorem. The full constant
-  getter body theorem also uses only Lean's standard axioms.
+  getter body theorem also uses only Lean's standard axioms. The constant call
+  return to the recover frame also uses only Lean's standard axioms.
 - Next: enter `fun_recover` for the `raw.len = SigLen` path and step its internal
   `eq(var_sig_length, 2448)` guard.
 
