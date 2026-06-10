@@ -254,4 +254,40 @@ theorem callDispatcher_mono_step {n} (h : MonoAt n) (co s)
   conv_rhs => rw [callDispatcher]
   rw [hexec]
 
+/-! ### Inductive step — `call` (account lookup + single `exec` sub-call) -/
+
+/-- Rewriting `exec` inside the `error/ok` result-match. -/
+theorem exec_match_mono {n X co Y}
+    (G : EvmYul.Yul.State → Except Yul.Exception (EvmYul.Yul.State × List Literal))
+    (heq : exec (n+1) X co Y = exec n X co Y) :
+    (match exec (n+1) X co Y with
+     | .error e => (.error e : Except Yul.Exception (EvmYul.Yul.State × List Literal))
+     | .ok s₂ => G s₂)
+  = (match exec n X co Y with
+     | .error e => (.error e : Except Yul.Exception (EvmYul.Yul.State × List Literal))
+     | .ok s₂ => G s₂) := by rw [heq]
+
+theorem call_mono_step {n} (h : MonoAt n) (args f co s) (hne : call (n+1) args f co s ≠ OOF) :
+    call (n+2) args f co s = call (n+1) args f co s := by
+  conv_lhs => rw [call]
+  conv_rhs => rw [call]
+  cases hf : s.sharedState.accountMap.find? s.executionEnv.codeOwner with
+  | none => simp only []
+  | some yc =>
+    simp only []
+    cases f with
+    | none =>
+      apply exec_match_mono
+      apply h.exec
+      intro hc; apply hne; conv_lhs => rw [call]; simp only [hf, hc]
+    | some fn =>
+      simp only []
+      cases hl : (co.getD yc.code).functions.lookup fn with
+      | none => simp only []
+      | some fdef =>
+        simp only []
+        apply exec_match_mono
+        apply h.exec
+        intro hc; apply hne; conv_lhs => rw [call]; simp only [hf, hl, hc]
+
 end EvmYul.Yul.FuelMono
