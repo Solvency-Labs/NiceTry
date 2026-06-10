@@ -77,4 +77,29 @@ theorem uint256_kec_mask_toNat (kec : Nat) (hk : kec < EvmYul.UInt256.size) :
     omega
   rw [uint256_ofNat_land_toNat, Nat.mod_eq_of_lt hk, Nat.mod_eq_of_lt hmask]
 
+/-! ## keccak output size + the full per-hash value→model bridge -/
+
+/-- **Trust item (keccak output size).** `keccak256` returns a 256-bit hash, so its
+    big-endian value is `< 2²⁵⁶`. A total-correctness spec of the opaque `ffi.KEC`
+    (provable once EVMYulLean's `private fromBytes_was_good_all_year_long` + a KEC-size
+    spec are exposed upstream) — **NOT** a hardness assumption. -/
+axiom ffi_kec_lt (b : ByteArray) : fromByteArrayBigEndian (ffi.KEC b) < EvmYul.UInt256.size
+
+/-- The contract's `not(0xff…ff)` (16-byte low mask) is exactly `NMaskWord`. -/
+theorem low16_lnot :
+    (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+      = UInt256.ofNat NiceTry.Fors.NMaskWord := by decide
+
+/-- **Per-hash value→model bridge.** The contract's masked keccak value
+    (`and(keccak256(off,len), not 0xff…)`) has `.toNat` exactly the model's
+    `KEC &&& NMaskWord` — the form the `AddressShape` shape lemmas conclude. With
+    `eval_masked_keccak` (the eval) and a shape lemma, each loop-body hash becomes its
+    `leafHash`/`climbLevel` model value. -/
+theorem masked_keccak_toNat (m : MachineState) (off len : UInt256) :
+    (((m.keccak256 off len).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = (fromByteArrayBigEndian (ffi.KEC (m.memory.readWithPadding off.toNat len.toNat)))
+          &&& NiceTry.Fors.NMaskWord := by
+  rw [keccak256_value, low16_lnot]
+  exact uint256_kec_mask_toNat _ (ffi_kec_lt _)
+
 end NiceTry.Fors.Bridge
