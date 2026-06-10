@@ -50,6 +50,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.InterpKeccak,
     `NiceTry.Fors.Bridge.InterpCall,
     `NiceTry.Fors.Bridge.InterpEval,
+    `NiceTry.Fors.Bridge.InterpHash,
     `NiceTry.Fors.Bridge.Refinement,
     `NiceTry.Fors.Bridge.EvmRunRecover
   ]
