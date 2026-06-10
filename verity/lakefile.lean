@@ -44,6 +44,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.FuelMono,
     `NiceTry.Fors.Bridge.AddressShape,
     `NiceTry.Fors.Bridge.Interp,
+    `NiceTry.Fors.Bridge.InterpLoop,
     `NiceTry.Fors.Bridge.InterpOps,
     `NiceTry.Fors.Bridge.InterpState,
     `NiceTry.Fors.Bridge.InterpCall,
