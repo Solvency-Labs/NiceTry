@@ -32,4 +32,20 @@ theorem keccak256_memory (m : MachineState) (mstart sz : UInt256) :
     (m.keccak256 mstart sz).2.memory = m.memory := by
   unfold MachineState.keccak256; rfl
 
+/-! ## Memory bridge — interpreter `mstore` ↔ the `MachineState` `AddressShape` uses
+
+The loop body runs on an `.Ok` state; `setMachineState`/`mstore` thread through it so
+the `toMachineState` after a `mstore(a,v)` sequence is exactly the chained
+`MachineState.mstore` the `AddressShape` shape lemmas take as input. -/
+
+theorem setMachineState_toMachineState_ok (ss : SharedState .Yul) (vs : VarStore) (m : MachineState) :
+    ((EvmYul.Yul.State.Ok ss vs).setMachineState m).toMachineState = m := rfl
+
+/-- Running `mstore(a,v)` (via `primCall_mstore`) on an `.Ok` state leaves a machine
+    state that is exactly the `AddressShape`-form `mstore`. -/
+theorem mstore_run_toMachineState_ok (ss : SharedState .Yul) (vs : VarStore) (a v : UInt256) :
+    (((EvmYul.Yul.State.Ok ss vs).setMachineState
+        ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore a v)).toMachineState)
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState.mstore a v := rfl
+
 end NiceTry.Fors.Bridge
