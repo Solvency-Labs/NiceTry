@@ -15,11 +15,25 @@
   never run. **So Class-A does not yet reach `evmRun`** — the eager-all-5-branches
   `switch` dispatch (run every case body, then `foldr`-select 0x1aad75c5) is the
   uncomposed blocker, and it sits upstream of `h_len`, `h_guard`, AND `h_accept`.
-- **Re-scoped next step (THE rock):** compose the dispatcher `switch` via the
-  available `exec_switch_ok` + `execSwitchCases_*` + `foldr_switch_*` (and
-  `primCall_mload`): trace the 4 getter case bodies to `YulHalt` (values are
-  discarded by `foldr`, just must not `OutOfFuel`), reuse the recover case-body
-  trace, and select. Then `h_len`'s two reject branches assemble on top.
+- **⚠ SECOND, DEEPER GAP — fixed-fuel fragments don't reach `evmRun`.** Every
+  dispatcher/recover fragment is proved at a *fixed small fuel* (`exec 7/9/13`,
+  `eval 2/4/…`), but `evmRun` runs `runForsCalldata … 100000`. There is **no
+  fuel-monotonicity lemma**, so `exec 7 (mstore…)` cannot be used inside
+  `exec 99999 (mstore…)` in the real run — the fragments do not compose up to fuel
+  100000. *So no amount of additional case-body tracing reaches `evmRun` on its own.*
+- **STRATEGIC FIX (do this FIRST — one lemma unlocks both gaps):** prove
+  **fuel-monotonicity** of the interpreter:
+  `exec n stmt co s = r → r ≠ .error .OutOfFuel → exec (n+1) stmt co s = r`
+  (+ `eval`/`call`/`execSwitchCases`/`loop` analogues; a mutual induction over the
+  7-way block). Then every existing fixed-fuel fragment lifts to fuel 100000, and
+  the switch composes without re-threading exact fuels. (Alternative — re-state
+  ~3,800 lines at generic fuel — is strictly worse.)
+- **Then the switch composition:** `forsDispatcher = Block[ mstore(64,128),
+  If(iszero(lt(calldatasize,4)))[Switch(shr(224,calldataload 0)) [(0x1aad75c5=447575493,
+  recoverBody), 4 getters] []], revert(0,0) ]`. Compose via `exec_switch_ok` +
+  `execSwitchCases_*` + `foldr_switch_*` + `primCall_mload`: trace the 4 getter
+  bodies to `YulHalt` (discarded by `foldr`, just must not `OutOfFuel`), reuse the
+  recover trace, select 0x1aad75c5. Then `h_len`'s two reject branches assemble on top.
 
 ## Agent progress (2026-06-07)
 
