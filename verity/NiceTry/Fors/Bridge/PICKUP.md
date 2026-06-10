@@ -16,6 +16,58 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
 
+## Sprint log (2026-06-10c) — tree loop A2 landed: the leaf-hash template
+
+- **A2 DONE — `Bridge/TreeLeaf.lean`** (generic-fuel throughout; adds **zero**
+  axioms — every theorem is Lean-core-only except the end-to-end value theorem,
+  which uses exactly the existing `evm_keccak_leaf` + `ffi_kec_lt` +
+  `ffi_zeroes_eq_empty` + `uint256_toByteArray_size`):
+  - **Loop AST pinned**: `forsTreeCond`/`forsTreePost`/`forsTreeBody` (all 28 body
+    statements) with `forsFunRecover_tree_for : forsFunRecover.body[32]? = some
+    forsTreeFor := rfl` — proofs about `forsTreeBody` are about the real
+    transcription.
+  - **Leaf prefix executed**: `exec_tree_body_leaf_prefix` runs body statements
+    0–2 (ADRS mstore @0x3a0, masked-sk mstore @0x3c0, leaf keccak `let`) on any
+    `.Ok ss vs` at fuel `n+13` → `treeAfterLeafHash`. Reusable statement
+    reducers: `exec_mstore_lit` (any `mstore(<lit>, <pure e>)`),
+    `exec_let_masked_keccak_var_len`, `eval_keccak_lit_var`, plus the
+    `multifill` normal forms (`multifill_nil_vars`/`multifill_single`).
+  - **The bookkeeping bridge**: `treeAfterLeafSk_toMachineState` — the
+    interpreter machine state after the two stores IS the `AddressShape` mstore
+    chain (`rfl`!), plus varstore/`toState` preservation lemmas.
+  - **The value**: `tree_leaf_node_value_eq_leafHash` — with the entry machine
+    state factored as `m.mstore 0x380 pkSeed` (`hm`) and `ret_2 = 96` (`hlen`),
+    the bound `usr_node` value `.toNat` = model `leafHash` (wiring:
+    `masked_keccak_toNat` → `leaf_derivation_eq_overwrite`); the ADRS-word
+    arithmetic stays a hypothesis (`hadrs`) for the A4 invariant to supply.
+  - **A3 handoff**: `state_getElem!_eq_lookup!`,
+    `state_getElem_insert_{self,ne}` (Finmap insert-lookup through `Yul.State`),
+    `treeAfterLeafHash_getElem_usr_node` (reading `usr_node` back).
+- **Gotchas found (real, will bite A3):**
+  - `Identifier` is a **non-reducible `def`** of `String` → a raw string literal
+    in `s["x"]!` does NOT trigger the `Yul.State` `GetElem` instance
+    (`GetElem? Yul.State String` synthesis fails). Use the pre-typed constants
+    (`tLeafBaseId`/`dCursorId`/`treePtrId`/`ret2Id`/`usrNodeId`) — they stay
+    defeq to the literals the AST carries (verified: `eval_var` instances).
+  - `default` is a **reserved token** in files importing `YulNotation` (the
+    `switch`-default syntax) — write `Inhabited.default` in terms.
+  - `decide` on `UInt256` `.toNat` facts blows the heartbeat budget — use the
+    `uint256_ofNat_toNat` bridge (mirrors `EvmMemory`'s private lemma) with a
+    cheap `Nat` bound `decide`.
+  - `InterpOps` `primCall_*` take `s` **implicitly**; `InterpState`'s take it
+    explicitly.
+- **Next (A3)**: the five node hashes mirror the template. Per level: evaluate the
+  selector `usr_s_k` (pure ops over `usr_dCursor`/`ret`), the ADRS store @0x3a0
+  (`exec_mstore_lit` + a `treeNodeAdrsStmt` eval), the two swap stores at
+  `xor(0x3c0, s)`/`xor(0x3e0, s)` (needs an `exec_mstore_expr` variant for
+  non-literal offsets), the node keccak (`keccak256(0x380, 128)` — add a
+  lit-lit masked-keccak `let` reducer), then
+  `node_derivation_eq_climbLevel_{even,odd}_overwrite` keyed on the `usr_s`
+  swap value (`usr_s ∈ {0, 32}` ↔ even/odd `pathIdx`). Then A4: thread
+  `treeAfterLeafHash` through one full body → `loop_step` induction with the
+  invariant (pkSeed factoring across iterations needs an mstore-commute or an
+  extract-based re-factoring lemma — not yet built).
+
 ## Sprint log (2026-06-10b) — scoped to `fun_recover`; tree loop started
 
 - **Strategic pivot — scope to `fun_recover`** (`EvmRunRecover.lean`). The dispatcher's
