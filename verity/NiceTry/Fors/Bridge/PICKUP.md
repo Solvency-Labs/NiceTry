@@ -26,6 +26,18 @@
   `exec n stmt co s ≠ .error .OutOfFuel → exec (n+1) stmt co s = exec n stmt co s`
   (+ analogues). Then every existing fixed-fuel fragment lifts to fuel 100000, and
   the switch composes without re-threading exact fuels.
+  - **Progress (`FuelMono.lean`, 2026-06-10):** 9 conjuncts proven + committed (base
+    case + the 5 wrappers + `eval`/`evalArgs`/`callDispatcher`/`call`) + the recursive
+    template `exec_block_cons_mono`. Remaining core: `exec` (~13 cases), `loop`,
+    `primCall` (CALL family).
+  - **⚠ FINDING — `execSwitchCases` is NOT fuel-monotone (the eager-`switch` crux).**
+    It *records* a case body's `OutOfFuel` as a branch and continues (doesn't
+    propagate), so a body that OOFs at `n` but terminates at `n+1` breaks
+    `execSwitchCases (n+1) = (n+2)` despite `≠OOF`. `MonoAt.switch` is false as stated.
+    `exec` on `Switch` is still monotone (the `foldr` selects by static case value and
+    ignores non-selected branches → only the selected body's `exec` matters), but it
+    needs a **refined `foldr`-selection argument**, not `execSwitchCases`-mono. This is
+    the genuine hard core of the eager dispatch.
   - **Mechanic VALIDATED** (2026-06-10): induction on `n`, `conv => rw [exec]`
     unfolds both fuel layers, the IH at `n` lifts the head, the `≠ OutOfFuel`
     precondition propagates through the `match`. The recursive `Block` case goes
