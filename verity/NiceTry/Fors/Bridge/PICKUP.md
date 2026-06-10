@@ -1,5 +1,21 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Trust surface (12 labeled axioms — `#print axioms` shows only these + Lean core)
+
+None are hardness assumptions. Verify with `#print axioms <thm>`.
+- **keccak (5)** — `evm_keccak_{address,hmsg,leaf,node,roots}` (`AddressShape.lean`): the
+  kickoff "keccak is trusted" decision; each currently also folds the 16-byte masking
+  (Gap-B, to be split into a keccak-only axiom + a proved masking lemma).
+- **FFI memory padding (3)** — `ffi_zeroes_{size,get!,eq_empty}` (`EvmFfiSpec.lean`):
+  total-correctness specs of the opaque `ffi.ByteArray.zeroes`; not crypto.
+- **word-codec (2)** — `uint256_toByteArray_{size,roundtrip}` (`EvmFfiSpec.lean`):
+  true, provable-but-upstream-`private`; discharge via an EVMYulLean PR.
+- **keccak output size (1)** — `ffi_kec_lt` (`InterpKeccak.lean`): `ffi.KEC` value `< 2²⁵⁶`;
+  total-correctness spec, same upstream PR.
+- **dispatcher routing (1)** — `dispatcher_routes_to_recover` (`EvmRunRecover.lean`): the
+  `fun_recover`-scoping assumption; dischargeable via the switch composition + the
+  remaining fuel-monotonicity.
+
 ## Sprint log (2026-06-10b) — scoped to `fun_recover`; tree loop started
 
 - **Strategic pivot — scope to `fun_recover`** (`EvmRunRecover.lean`). The dispatcher's
