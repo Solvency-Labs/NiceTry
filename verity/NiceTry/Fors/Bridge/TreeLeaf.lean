@@ -89,6 +89,64 @@ theorem exec_let_masked_keccak_var_len {n co} {s : EvmYul.Yul.State}
     (s := s.setMachineState (s.toMachineState.keccak256 off s[lenVar]!).2)
     (s.toMachineState.keccak256 off s[lenVar]!).1 maskLit.lnot), multifill_single]
 
+/-- `mstore(e₁, e₂)` for pure (state-preserving) offset and value expressions —
+    the node levels' `mstore(xor(0x3c0, usr_s), …)` swap stores. -/
+theorem exec_mstore_expr {n co} {s : EvmYul.Yul.State} {a v : UInt256} {e₁ e₂ : Expr}
+    (he₁ : eval (n+2) e₁ co s = .ok (s, a))
+    (he₂ : eval (n+4) e₂ co s = .ok (s, v)) :
+    exec (n+6) (.ExprStmtCall (.Call (Sum.inl .MSTORE) [e₁, e₂])) co s
+      = .ok (s.setMachineState (s.toMachineState.mstore a v)) := by
+  rw [exec_exprstmt_prim (n := n+5)]
+  show execPrimCall (n+5) .MSTORE [] (reverse' (evalArgs (n+5) [e₂, e₁] co s)) = _
+  rw [evalArgs_cons_ok (n := n+4) (h := he₂), evalTail_cons_ok (n := n+3),
+    evalArgs_cons_ok (n := n+2) (h := he₁),
+    evalTail_cons_ok (n := n+1), evalArgs_nil (n := n)]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok (h := primCall_mstore (n := n+4) s a v), multifill_nil_vars]
+
+/-- `let x := OP(e₁, e₂)` for a pure binop on pure operands — the node levels'
+    selector `let`s (`usr_s_k := and(…, ret)`). -/
+theorem exec_let_binop {n co} {s : EvmYul.Yul.State} {x : Identifier}
+    {OP : PrimOp} {e₁ e₂ : Expr} {v₁ v₂ out : UInt256}
+    (hprim : primCall (n+5) s OP [v₁, v₂] = .ok (s, [out]))
+    (he₁ : eval (n+2) e₁ co s = .ok (s, v₁))
+    (he₂ : eval (n+4) e₂ co s = .ok (s, v₂)) :
+    exec (n+6) (.Let [x] (.some (.Call (Sum.inl OP) [e₁, e₂]))) co s
+      = .ok (s.insert x out) := by
+  rw [exec_let_prim (n := n+5)]
+  show execPrimCall (n+5) OP [x] (reverse' (evalArgs (n+5) [e₂, e₁] co s)) = _
+  rw [evalArgs_cons_ok (n := n+4) (h := he₂), evalTail_cons_ok (n := n+3),
+    evalArgs_cons_ok (n := n+2) (h := he₁),
+    evalTail_cons_ok (n := n+1), evalArgs_nil (n := n)]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok (h := hprim), multifill_single]
+
+/-- `let x := and(keccak256(<lit>, <lit>), not(<lit>))` — the five node-hash
+    statements (`keccak256(0x380, 128)`). -/
+theorem exec_let_masked_keccak_lit_lit {n co} {s : EvmYul.Yul.State}
+    {x : Identifier} {off len maskLit : UInt256} :
+    exec (n+10) (.Let [x] (.some (.Call (Sum.inl .AND)
+        [.Call (Sum.inl .KECCAK256) [.Lit off, .Lit len],
+         .Call (Sum.inl .NOT) [.Lit maskLit]]))) co s
+      = .ok ((s.setMachineState (s.toMachineState.keccak256 off len).2).insert x
+              (((s.toMachineState.keccak256 off len).1).land maskLit.lnot)) := by
+  rw [exec_let_prim (n := n+9)]
+  show execPrimCall (n+9) .AND [x]
+      (reverse' (evalArgs (n+9)
+        [.Call (Sum.inl .NOT) [.Lit maskLit],
+         .Call (Sum.inl .KECCAK256) [.Lit off, .Lit len]] co s)) = _
+  rw [evalArgs_cons_ok (n := n+8) (h := eval_not_mask (n := n+4) maskLit),
+    evalTail_cons_ok (n := n+7),
+    evalArgs_cons_ok (n := n+6) (h := eval_keccak (n := n) off len),
+    evalTail_cons_ok (n := n+5), evalArgs_nil (n := n+4)]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok (h := primCall_and (n := n+8)
+    (s := s.setMachineState (s.toMachineState.keccak256 off len).2)
+    (s.toMachineState.keccak256 off len).1 maskLit.lnot), multifill_single]
+
 /-! ## The tree-loop AST (tied to `forsFunRecover` by `forsFunRecover_tree_for`) -/
 
 /-- Leaf ADRS expression: `or(shl(128, 3), or(usr_tLeafBase, and(usr_dCursor, 31)))`. -/
