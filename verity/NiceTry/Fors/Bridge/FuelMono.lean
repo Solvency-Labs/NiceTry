@@ -195,4 +195,47 @@ theorem evalTail_mono_step {n} (h : MonoAt n) (a co x) (hne : evalTail (n+1) a c
     have ha : evalArgs n a co s ≠ OOF := fun haa => hne (by rw [evalTail, haa, cons'_oof])
     rw [evalTail, evalTail, h.evalArgs a co s ha]
 
+/-! ### Inductive step — `eval` and `evalArgs` (use the IH for sub-calls) -/
+
+theorem reverse'_oof : reverse' (OOF : Except Yul.Exception (EvmYul.Yul.State × List Literal)) = OOF := rfl
+theorem evalPrimCall_oof (m p) : evalPrimCall m p OOF = OOF := by rw [evalPrimCall]
+theorem evalCall_oof (m f co) : evalCall m f co OOF = OOF := by rw [evalCall]
+theorem evalTail_oof (m a co) : evalTail m a co OOF = OOF := by rw [evalTail]
+
+theorem eval_mono_step {n} (h : MonoAt n) (e co s) (hne : eval (n+1) e co s ≠ OOF) :
+    eval (n+2) e co s = eval (n+1) e co s := by
+  cases e with
+  | Lit lit => rw [eval]; conv_rhs => rw [eval]
+  | Var id => rw [eval]; conv_rhs => rw [eval]
+  | Call sf args =>
+    cases sf with
+    | inl prim =>
+      have key : eval (n+1) (.Call (Sum.inl prim) args) co s
+               = evalPrimCall n prim (reverse' (evalArgs n args.reverse co s)) := by rw [eval]
+      rw [key] at hne
+      have hargs : evalArgs n args.reverse co s ≠ OOF := by
+        intro hc; rw [hc, reverse'_oof, evalPrimCall_oof] at hne; exact hne rfl
+      conv_lhs => rw [eval]
+      rw [key, h.evalArgs _ co s hargs, h.evalPrimCall prim _ hne]
+    | inr fn =>
+      have key : eval (n+1) (.Call (Sum.inr fn) args) co s
+               = evalCall n fn co (reverse' (evalArgs n args.reverse co s)) := by rw [eval]
+      rw [key] at hne
+      have hargs : evalArgs n args.reverse co s ≠ OOF := by
+        intro hc; rw [hc, reverse'_oof, evalCall_oof] at hne; exact hne rfl
+      conv_lhs => rw [eval]
+      rw [key, h.evalArgs _ co s hargs, h.evalCall fn co _ hne]
+
+theorem evalArgs_mono_step {n} (h : MonoAt n) (a co s) (hne : evalArgs (n+1) a co s ≠ OOF) :
+    evalArgs (n+2) a co s = evalArgs (n+1) a co s := by
+  cases a with
+  | nil => rw [evalArgs]; conv_rhs => rw [evalArgs]
+  | cons arg rest =>
+    have key : evalArgs (n+1) (arg :: rest) co s = evalTail n rest co (eval n arg co s) := by rw [evalArgs]
+    rw [key] at hne
+    have heval : eval n arg co s ≠ OOF := by
+      intro hc; rw [hc, evalTail_oof] at hne; exact hne rfl
+    conv_lhs => rw [evalArgs]
+    rw [key, h.eval arg co s heval, h.evalTail rest co _ hne]
+
 end EvmYul.Yul.FuelMono
