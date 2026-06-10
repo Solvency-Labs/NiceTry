@@ -40,6 +40,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.ClassA,
     `NiceTry.Fors.Bridge.ClassAConst,
     `NiceTry.Fors.Bridge.ClassARecover,
+    `NiceTry.Fors.Bridge.ClassALen,
     `NiceTry.Fors.Bridge.AddressShape,
     `NiceTry.Fors.Bridge.Interp,
     `NiceTry.Fors.Bridge.InterpOps,
