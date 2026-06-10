@@ -134,4 +134,65 @@ theorem exec_block_cons_mono (n co)
           intro hc; apply hne; rw [exec, hst]; simpa using hc
         exact ih (.Block sts) s₁ htail
 
+/-! ### Inductive step — the wrapper conjuncts
+
+`evalPrimCall`/`execPrimCall` call `primCall` at the *same* fuel, so they take the
+same-level `primCall` step `hpc`; `evalCall`/`execCall`/`evalTail` decrement fuel and
+use the IH (`h.call`/`h.evalArgs`). All preserve `OutOfFuel`. -/
+
+theorem head'_oof : head' (OOF : Except Yul.Exception (EvmYul.Yul.State × List Literal)) = OOF := rfl
+theorem multifill'_oof (vs) :
+    multifill' vs (OOF : Except Yul.Exception (EvmYul.Yul.State × List Literal)) = OOF := rfl
+theorem cons'_oof (a : Literal) :
+    cons' a (OOF : Except Yul.Exception (EvmYul.Yul.State × List Literal)) = OOF := rfl
+
+theorem evalPrimCall_mono_step {n}
+    (hpc : ∀ s p a, primCall (n+1) s p a ≠ OOF → primCall (n+2) s p a = primCall (n+1) s p a)
+    (p x) (hne : evalPrimCall (n+1) p x ≠ OOF) :
+    evalPrimCall (n+2) p x = evalPrimCall (n+1) p x := by
+  cases x with
+  | error e => rw [evalPrimCall, evalPrimCall]
+  | ok v =>
+    obtain ⟨s, args⟩ := v
+    have hp : primCall (n+1) s p args ≠ OOF := fun hc => hne (by rw [evalPrimCall, hc, head'_oof])
+    rw [evalPrimCall, evalPrimCall, hpc s p args hp]
+
+theorem execPrimCall_mono_step {n}
+    (hpc : ∀ s p a, primCall (n+1) s p a ≠ OOF → primCall (n+2) s p a = primCall (n+1) s p a)
+    (p vs x) (hne : execPrimCall (n+1) p vs x ≠ OOF) :
+    execPrimCall (n+2) p vs x = execPrimCall (n+1) p vs x := by
+  cases x with
+  | error e => rw [execPrimCall, execPrimCall]
+  | ok v =>
+    obtain ⟨s, args⟩ := v
+    have hp : primCall (n+1) s p args ≠ OOF := fun hc => hne (by rw [execPrimCall, hc, multifill'_oof])
+    rw [execPrimCall, execPrimCall, hpc s p args hp]
+
+theorem evalCall_mono_step {n} (h : MonoAt n) (f co x) (hne : evalCall (n+1) f co x ≠ OOF) :
+    evalCall (n+2) f co x = evalCall (n+1) f co x := by
+  cases x with
+  | error e => rw [evalCall, evalCall]
+  | ok v =>
+    obtain ⟨s, args⟩ := v
+    have hc : call n args f co s ≠ OOF := fun hcc => hne (by rw [evalCall, hcc, head'_oof])
+    rw [evalCall, evalCall, h.call args f co s hc]
+
+theorem execCall_mono_step {n} (h : MonoAt n) (f vs co x) (hne : execCall (n+1) f vs co x ≠ OOF) :
+    execCall (n+2) f vs co x = execCall (n+1) f vs co x := by
+  cases x with
+  | error e => rw [execCall, execCall]
+  | ok v =>
+    obtain ⟨s, args⟩ := v
+    have hc : call n args f co s ≠ OOF := fun hcc => hne (by rw [execCall, hcc, multifill'_oof])
+    rw [execCall, execCall, h.call args f co s hc]
+
+theorem evalTail_mono_step {n} (h : MonoAt n) (a co x) (hne : evalTail (n+1) a co x ≠ OOF) :
+    evalTail (n+2) a co x = evalTail (n+1) a co x := by
+  cases x with
+  | error e => rw [evalTail, evalTail]
+  | ok v =>
+    obtain ⟨s, arg⟩ := v
+    have ha : evalArgs n a co s ≠ OOF := fun haa => hne (by rw [evalTail, haa, cons'_oof])
+    rw [evalTail, evalTail, h.evalArgs a co s ha]
+
 end EvmYul.Yul.FuelMono
