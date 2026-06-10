@@ -238,6 +238,7 @@ def tLeafBaseId : Identifier := "usr_tLeafBase"
 def dCursorId : Identifier := "usr_dCursor"
 def treePtrId : Identifier := "usr_treePtr"
 def ret2Id : Identifier := "ret_2"
+def usrNodeId : Identifier := "usr_node"
 
 /-- Contract-side leaf ADRS word: `or(shl(128, 3), or(tLeafBase, and(dCursor, 31)))`. -/
 def treeLeafAdrsWord (tLeafBase dCursor : UInt256) : UInt256 :=
@@ -376,6 +377,51 @@ theorem treeAfterLeafSk_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
             (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
               (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)).mstore
           (UInt256.ofNat 0x3c0) (treeSkWord (.Ok ss vs)) := rfl
+
+/-! ### Reading the varstore after the leaf prefix (A3 handoff) -/
+
+/-- `getElem!` ↔ `lookup!` on an `.Ok` state (the `GetElem` instance ignores the
+    membership proof; an out-of-store read defaults to `0` on both sides). -/
+theorem state_getElem!_eq_lookup! (ss : SharedState .Yul) (vs : VarStore)
+    (y : Identifier) :
+    (EvmYul.Yul.State.Ok ss vs)[y]! = EvmYul.Yul.State.lookup! y (.Ok ss vs) := by
+  by_cases h : y ∈ vs
+  · rw [getElem!_pos]
+    · rfl
+    · exact h
+  · rw [getElem!_neg]
+    · show Inhabited.default = ((vs.lookup y).get!)
+      rw [Finmap.lookup_eq_none.mpr h]
+      rfl
+    · exact h
+
+/-- Reading a freshly inserted variable. -/
+theorem state_getElem_insert_self (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) (v : EvmYul.Literal) :
+    ((EvmYul.Yul.State.Ok ss vs).insert x v)[x]! = v := by
+  show (EvmYul.Yul.State.Ok ss (vs.insert x v))[x]! = v
+  rw [getElem!_pos]
+  · show ((vs.insert x v).lookup x).get! = v
+    rw [Finmap.lookup_insert]
+    rfl
+  · show x ∈ vs.insert x v
+    exact Finmap.mem_insert.mpr (Or.inl rfl)
+
+/-- Reading any other variable after an insert. -/
+theorem state_getElem_insert_ne (ss : SharedState .Yul) (vs : VarStore)
+    {x y : Identifier} (v : EvmYul.Literal) (h : y ≠ x) :
+    ((EvmYul.Yul.State.Ok ss vs).insert x v)[y]!
+      = (EvmYul.Yul.State.Ok ss vs)[y]! := by
+  show (EvmYul.Yul.State.Ok ss (vs.insert x v))[y]! = _
+  rw [state_getElem!_eq_lookup!, state_getElem!_eq_lookup!]
+  show ((vs.insert x v).lookup y).get! = ((vs.lookup y).get!)
+  rw [Finmap.lookup_insert_of_ne _ h]
+
+/-- Reading `usr_node` back after the leaf prefix — what statement 5's
+    `mstore(xor(0x3c0, usr_s), usr_node)` evaluates `usr_node` to (A3). -/
+theorem treeAfterLeafHash_getElem_usr_node (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterLeafHash (.Ok ss vs))[usrNodeId]! = treeLeafNodeWord (.Ok ss vs) :=
+  state_getElem_insert_self _ _ _ _
 
 /-- Concrete-offset `toNat` bridge (mirrors `EvmMemory`'s private lemma). -/
 private theorem uint256_ofNat_toNat (k : Nat) (h : k < EvmYul.UInt256.size) :
