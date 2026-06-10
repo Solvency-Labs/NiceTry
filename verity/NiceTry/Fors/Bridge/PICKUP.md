@@ -1,5 +1,31 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Sprint log (2026-06-10b) — scoped to `fun_recover`; tree loop started
+
+- **Strategic pivot — scope to `fun_recover`** (`EvmRunRecover.lean`). The dispatcher's
+  eager `switch` + fuel-monotonicity (incl. the `execSwitchCases` non-mono crux) are
+  *off the critical path*. `evmRunRecover` runs `fun_recover` directly; the dispatcher
+  routing is **one explicit, dischargeable axiom** `dispatcher_routes_to_recover`
+  (boilerplate, not crypto — discharge later via the switch composition). The target
+  is now `fun_recover`'s recovery logic, where the value is.
+- **Tree-loop foundation** (`InterpLoop.lean`): the `for`-loop step lemmas
+  (`exec_for`/`loop_exit`/`loop_step`/`loop_cond_err`) — the induction scaffolding.
+- **THE tree loop (next, the multi-week core).** `fun_recover`'s `for { } lt(usr_t,25)
+  {post} {body}`:
+  1. **Per-iteration body**: each iteration computes leaf + 5 `climbLevel` node hashes
+     (6 `keccak256`s) → connect each to the model via the **already-proved**
+     `leaf_derivation_eq_model_leaf_overwrite` /
+     `node_derivation_eq_model_climbLevel_{even,odd}_overwrite` (`AddressShape.lean`),
+     storing the root at `usr_rootPtr = 0x40 + 32·t`.
+  2. **Invariant** after `k` iters: `usr_t=k`, pointers advanced, `usr_dCursor=dVal>>5k`,
+     `mem[0x40+32·j]=root_j` for `j<k`, `pkSeed@0x380`.
+  3. **Induct** over `25−k` via `loop_step` ⇒ all 25 roots in the buffer.
+  4. Feed `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`
+     (proved) ⇒ `compressRoots = recoverRoot`, then `address_derivation_eq_overwrite`
+     ⇒ **`h_accept`**.
+  Fuel threads generically per `loop_step` — **no monotonicity needed** (no switch).
+- Reject branches (`h_len`/`h_guard`) against `evmRunRecover` are the easy warm-up.
+
 ## Sprint log (2026-06-10) — `h_len` sprint + a gap finding
 
 - **T1 done** (`ClassALen.lean`): terminal-state → `evmRun=0` plumbing —
