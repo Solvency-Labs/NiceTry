@@ -47,6 +47,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.InterpLoop,
     `NiceTry.Fors.Bridge.InterpOps,
     `NiceTry.Fors.Bridge.InterpState,
+    `NiceTry.Fors.Bridge.InterpKeccak,
     `NiceTry.Fors.Bridge.InterpCall,
     `NiceTry.Fors.Bridge.InterpEval,
     `NiceTry.Fors.Bridge.Refinement,
