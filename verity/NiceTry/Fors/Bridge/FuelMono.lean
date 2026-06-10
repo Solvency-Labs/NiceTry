@@ -238,4 +238,20 @@ theorem evalArgs_mono_step {n} (h : MonoAt n) (a co s) (hne : evalArgs (n+1) a c
     conv_lhs => rw [evalArgs]
     rw [key, h.eval arg co s heval, h.evalTail rest co _ hne]
 
+/-! ### Inductive step — `callDispatcher` (single `exec` sub-call) -/
+
+theorem callDispatcher_mono_step {n} (h : MonoAt n) (co s)
+    (hne : callDispatcher (n+1) co s ≠ OOF) :
+    callDispatcher (n+2) co s = callDispatcher (n+1) co s := by
+  set fd : FunctionDefinition := FunctionDefinition.Def [] [] [s.executionEnv.code.dispatcher] with hfd
+  have hexec : exec (n+1) (.Block fd.body) co (👌 s.initcall fd.params [])
+             = exec n (.Block fd.body) co (👌 s.initcall fd.params []) := by
+    apply h.exec
+    intro hc; apply hne
+    conv_lhs => rw [callDispatcher]
+    rw [hc]
+  conv_lhs => rw [callDispatcher]
+  conv_rhs => rw [callDispatcher]
+  rw [hexec]
+
 end EvmYul.Yul.FuelMono
