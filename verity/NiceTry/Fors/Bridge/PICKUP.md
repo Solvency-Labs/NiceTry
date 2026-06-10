@@ -23,11 +23,23 @@
   100000. *So no amount of additional case-body tracing reaches `evmRun` on its own.*
 - **STRATEGIC FIX (do this FIRST — one lemma unlocks both gaps):** prove
   **fuel-monotonicity** of the interpreter:
-  `exec n stmt co s = r → r ≠ .error .OutOfFuel → exec (n+1) stmt co s = r`
-  (+ `eval`/`call`/`execSwitchCases`/`loop` analogues; a mutual induction over the
-  7-way block). Then every existing fixed-fuel fragment lifts to fuel 100000, and
-  the switch composes without re-threading exact fuels. (Alternative — re-state
-  ~3,800 lines at generic fuel — is strictly worse.)
+  `exec n stmt co s ≠ .error .OutOfFuel → exec (n+1) stmt co s = exec n stmt co s`
+  (+ analogues). Then every existing fixed-fuel fragment lifts to fuel 100000, and
+  the switch composes without re-threading exact fuels.
+  - **Mechanic VALIDATED** (2026-06-10): induction on `n`, `conv => rw [exec]`
+    unfolds both fuel layers, the IH at `n` lifts the head, the `≠ OutOfFuel`
+    precondition propagates through the `match`. The recursive `Block` case goes
+    through. So this is *feasible*, not blocked.
+  - **BUT it's a large all-or-nothing proof over the WHOLE mutual block** — not just
+    `exec`/`eval`, but `primCall` (50+ opcodes) and, via `primCall`'s `CALL` case,
+    `callDispatcher`. A single combined induction; no partial commit.
+  - **Two paths:**
+    (a) **Restricted pure-fragment monotonicity** (FORS-local): the contract is pure
+        (no `CALL`/`SSTORE`/…), so a version scoped to the non-`CALL` opcodes avoids
+        `callDispatcher` and the `CALL` family — medium-size, still all-or-nothing.
+    (b) **Upstream the general lemma to `lfglabs-dev/EVMYulLean`** — it's a general
+        interpreter property (belongs there, like the `toBytes'_le` de-privatization),
+        benefits everyone, and strengthens our trust-surface story. **Recommended.**
 - **Then the switch composition:** `forsDispatcher = Block[ mstore(64,128),
   If(iszero(lt(calldatasize,4)))[Switch(shr(224,calldataload 0)) [(0x1aad75c5=447575493,
   recoverBody), 4 getters] []], revert(0,0) ]`. Compose via `exec_switch_ok` +
