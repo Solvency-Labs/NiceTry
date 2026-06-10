@@ -20,11 +20,25 @@ What's proved here, `sorry`-free, axiom-clean:
 * `exec_block_cons_mono` — the **validated recursive mechanic** (the hard case);
   every recursive case of the inductive step follows this template.
 
-## Remaining (the focused completion — see PICKUP.md)
-`monoAt_succ : MonoAt n → MonoAt (n+1)` (each conjunct via the template / the wrappers
-from the core functions), then `fuel_mono : ∀ n, MonoAt n` by `Nat.rec`. The
-conjuncts are **individually committable** `*_mono_step` lemmas (each takes `MonoAt n`
-as a hypothesis), so the completion is incremental, not all-or-nothing.
+## Status
+Proven `*_mono_step` (each takes `MonoAt n`): base case + the 5 wrappers + `eval` +
+`evalArgs` + `callDispatcher` + `call`. Remaining core: `exec` (~13 cases via the
+`exec_block_cons_mono` template), `loop`, and `primCall` (pure ops `rfl`; CALL family
+via `callDispatcher`-mono).
+
+## ⚠ FINDING — `execSwitchCases` is NOT fuel-monotone (the eager-`switch` crux)
+`execSwitchCases` (`Interpreter.lean:505`) **records** a case body that returns
+`.error e` (incl. `OutOfFuel`) as a branch `(val, .error e)` and *continues* — it does
+not propagate `OutOfFuel`. So if a case body is `OutOfFuel` at fuel `n` but terminates
+at `n+1`, `execSwitchCases (n+1)` records the OOF while `execSwitchCases (n+2)` records
+the real result — they differ even though `execSwitchCases (n+1) ≠ OutOfFuel`. Hence
+**`MonoAt.switch` is false as stated** and cannot be proven.
+`exec` on `Switch` *is* still monotone — the `foldr` selects the branch whose (static)
+case value matches the scrutinee and **ignores the others**, so only the selected
+body's `exec` (monotone) matters. But proving it needs a **refined `foldr`-selection
+argument**, not `execSwitchCases`-mono. So: drop/replace the `switch` conjunct, and
+handle `exec`'s `Switch` case specially. This is the genuine hard core of the
+eager-`switch` dispatch — see PICKUP.md.
 -/
 
 namespace EvmYul.Yul.FuelMono
