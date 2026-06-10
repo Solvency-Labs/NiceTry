@@ -1,5 +1,26 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Sprint log (2026-06-10) — `h_len` sprint + a gap finding
+
+- **T1 done** (`ClassALen.lean`): terminal-state → `evmRun=0` plumbing —
+  `evmRun_zero_of_exec_revert` (revert ⇒ `none` ⇒ 0) and
+  `evmRun_zero_of_exec_yulhalt_zero` (RETURN with zero `H_return` ⇒ 0), on top of
+  the agent's `runForsCalldata_encode_unfold`. Green, axiom-free.
+- **⚠ GAP FOUND — the `switch` is uncomposed.** The Class-A trace proves the recover
+  *case-body* internals (offset/length/guards/recover-call) on named states
+  (`dispatcherAfterFreeMemPtr`/`AfterOffset`/`AfterLength`), but **nothing connects
+  `exec … forsDispatcher (forsInitialState)` through the `switch` into those states.**
+  The furthest-up lemma (`exec_dispatcher_has_selector_if_after_free_mem_ptr`) stops
+  at `exec (.Block body)` for an arbitrary `body`; the real `body = [switch …]` is
+  never run. **So Class-A does not yet reach `evmRun`** — the eager-all-5-branches
+  `switch` dispatch (run every case body, then `foldr`-select 0x1aad75c5) is the
+  uncomposed blocker, and it sits upstream of `h_len`, `h_guard`, AND `h_accept`.
+- **Re-scoped next step (THE rock):** compose the dispatcher `switch` via the
+  available `exec_switch_ok` + `execSwitchCases_*` + `foldr_switch_*` (and
+  `primCall_mload`): trace the 4 getter case bodies to `YulHalt` (values are
+  discarded by `foldr`, just must not `OutOfFuel`), reuse the recover case-body
+  trace, and select. Then `h_len`'s two reject branches assemble on top.
+
 ## Agent progress (2026-06-07)
 
 - Added `ClassA.eval_dispatcher_offset_bound_guard_after_offset` and
