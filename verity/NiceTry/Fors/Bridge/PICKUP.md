@@ -16,6 +16,40 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
 
+## Sprint log (2026-06-11) — A3 exec DONE: the full loop body runs symbolically
+
+- **`Bridge/TreeNode.lean`** (on top of the A2 template; generic fuel, generic
+  state, **zero added axioms** — all Lean-core-only):
+  - **All five node levels executed** (`exec_tree_body_node{1..5}`), each from
+    any state at fuel `n+20` → `n+15`, via parameterized statement lemmas
+    (`exec_tree_selector_let` incl. the triple-`and` form,
+    `exec_tree_node_adrs_mstore` over `(shl,shr,mask,C)`,
+    `exec_tree_node_store`/`exec_tree_sibling_store` over the selector var and
+    sibling-offset eval, `exec_tree_node_hash_let`, `exec_tree_root_store` via
+    the new state-threading `exec_mstore_thread`).
+  - **`exec_tree_body_iter`** — ONE COMPLETE body iteration: `exec (n+43)
+    (.Block forsTreeBody) co (.Ok ss vs) = .ok (treeIterState (.Ok ss vs))`.
+    This is `loop_step`'s `hbody`, with `treeIterState_ok` giving the `.Ok`
+    shape it pattern-matches on.
+  - **`eval_tree_cond`** (`lt(usr_t,25)` word) + **`exec_tree_post`** (the
+    5-statement post block → `treePostState`) — `loop_step`'s `hcond`/`hpost`.
+- **What remains for `h_accept`** (the value layer; all execution is done):
+  1. **Per-level value bridges**: relate each `treeNode<k>Word` to the model
+     `climbLevel` via `node_derivation_eq_climbLevel_{even,odd}_overwrite`.
+     Crux: the `usr_s_k ∈ {0, 32}` case split (`xor(0x3c0/0x3e0, usr_s)` swap)
+     plus **mstore bookkeeping not yet built**: same-offset overwrite collapse
+     (`(m.mstore a v).mstore a w = m.mstore a w`) and disjoint-offset commute,
+     to re-factor each level's chain into the 4-store `AddressShape` form with
+     `pkSeed@0x380` in front (the A2 leaf value theorem
+     `tree_leaf_node_value_eq_leafHash` shows the wiring pattern).
+  2. **A4 induction**: `loop_step` (InterpLoop) + `exec_tree_body_iter` +
+     `exec_tree_post`, invariant: `usr_t=k`, `usr_treePtr/rootPtr/tLeafBase`
+     advanced, `usr_dCursor = dVal>>5k`, `mem[0x40+32j]=root_j (j<k)`,
+     `pkSeed@0x380`, `ret=32`, `ret_2=96`. The varstore reads go through
+     `state_getElem_insert_{self,ne}` / `treePostState`'s insert chain.
+  3. Feed `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`
+     → `address_derivation_eq_overwrite` → `h_accept`.
+
 ## Sprint log (2026-06-10c) — tree loop A2 landed: the leaf-hash template
 
 - **A2 DONE — `Bridge/TreeLeaf.lean`** (generic-fuel throughout; adds **zero**
