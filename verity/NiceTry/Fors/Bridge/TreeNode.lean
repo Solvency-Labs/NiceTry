@@ -197,6 +197,35 @@ theorem exec_tree_node_hash_let {n co} (s : EvmYul.Yul.State) (x : Identifier) :
             (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)) :=
   exec_let_masked_keccak_lit_lit (n := n)
 
+/-- The per-level swap selector
+    `let <x> := and(and(and(shl(<b>, usr_dCursor), not(31)), <mid>), ret)`
+    (levels 2–5; `<mid>` is a literal or a variable, supplied as `hmid`). -/
+theorem exec_tree_selector_let {n co} {s : EvmYul.Yul.State} (x : Identifier)
+    (shlBits : Nat) {mid : Expr} {midVal : UInt256}
+    (hmid : eval (n+12) mid co s = .ok (s, midVal)) :
+    exec (n+18) (treeSelectorLetStmt x shlBits mid) co s
+      = .ok (s.insert x
+          ((((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat shlBits)).land
+              (UInt256.ofNat 31).lnot).land midVal).land s[retId]!)) :=
+  exec_let_binop (n := n+12)
+    (hprim := primCall_and (n := n+16) (s := s)
+      (((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat shlBits)).land
+          (UInt256.ofNat 31).lnot).land midVal)
+      s[retId]!)
+    (he₁ := eval_binop2 (n := n+8) (f := UInt256.land)
+      (hprim := primCall_and (n := n+12) (s := s)
+        ((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat shlBits)).land
+          (UInt256.ofNat 31).lnot)
+        midVal)
+      (he₁ := eval_binop2 (n := n+4) (f := UInt256.land)
+        (hprim := primCall_and (n := n+8) (s := s)
+          (UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat shlBits))
+          (UInt256.ofNat 31).lnot)
+        (he₁ := eval_tree_shl_lit_var (n := n))
+        (he₂ := eval_not_mask (n := n+4) (UInt256.ofNat 31)))
+      (he₂ := hmid))
+    (he₂ := eval_var (n := n+15))
+
 /-! ## Node level 1: post-states and the assembled trace -/
 
 /-- State after `let usr_s := …` (statement 3). -/
@@ -273,5 +302,414 @@ theorem exec_tree_body_node1 (n : Nat) (co : Option YulContract)
     exec (n+15) (.Let ["usr_node_1"] (.some treeNodeHashExpr)) co (treeAfterSibling1 s)
       = .ok (treeAfterNode1 s) from
     exec_tree_node_hash_let (n := n+5) (treeAfterSibling1 s) usrNode1Id)]
+
+/-! ## Node level 2: post-states and the assembled trace (statements 8–12) -/
+
+def usrS1Id : Identifier := "usr_s_1"
+def usrNode2Id : Identifier := "usr_node_2"
+
+/-- State after `let usr_s_1 := …` (statement 8). -/
+def treeAfterSel1 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "usr_s_1"
+    ((((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 4)).land
+        (UInt256.ofNat 31).lnot).land (UInt256.ofNat 480)).land s[retId]!)
+
+/-- State after the level-2 ADRS store (statement 9). -/
+def treeAfterNode2Adrs (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterSel1 s).setMachineState ((treeAfterSel1 s).toMachineState.mstore
+    (UInt256.ofNat 0x3a0)
+    (treeNodeAdrsWord (treeAfterSel1 s) 3 2 7
+      1020847100762815390390123822303894568960))
+
+/-- State after the level-2 node swap store (statement 10). -/
+def treeAfterNode2Store (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode2Adrs s).setMachineState ((treeAfterNode2Adrs s).toMachineState.mstore
+    ((UInt256.ofNat 0x3c0).xor (treeAfterNode2Adrs s)[usrS1Id]!)
+    (treeAfterNode2Adrs s)[usrNode1Id]!)
+
+/-- State after the level-2 sibling swap store (statement 11; the sibling offset
+    is `add(usr_treePtr, ret)`). -/
+def treeAfterSibling2 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode2Store s).setMachineState ((treeAfterNode2Store s).toMachineState.mstore
+    ((UInt256.ofNat 0x3e0).xor (treeAfterNode2Store s)[usrS1Id]!)
+    (treeMaskedCalldataWord (treeAfterNode2Store s)
+      ((treeAfterNode2Store s)[treePtrId]!.add (treeAfterNode2Store s)[retId]!)))
+
+/-- The value bound to `usr_node_2` (the masked level-2 node keccak). -/
+def treeNode2Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((treeAfterSibling2 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+      (UInt256.ofNat 128)).1).land
+    (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+
+/-- State after the whole level-2 block (`usr_node_2` bound). -/
+def treeAfterNode2 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  ((treeAfterSibling2 s).setMachineState
+      ((treeAfterSibling2 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+        (UInt256.ofNat 128)).2).insert "usr_node_2" (treeNode2Word s)
+
+/-- **Node level 2 execution.** Body statements 8–12, generically in fuel. -/
+theorem exec_tree_body_node2 (n : Nat) (co : Option YulContract)
+    (s : EvmYul.Yul.State) :
+    exec (n+20) (.Block (forsTreeBody.drop 8)) co s
+      = exec (n+15) (.Block (forsTreeBody.drop 13)) co (treeAfterNode2 s) := by
+  show exec (n+20)
+      (.Block (treeSelectorLetStmt "usr_s_1" 4 (.Lit (UInt256.ofNat 480))
+        :: treeNodeAdrsStmt 3 2 7 1020847100762815390390123822303894568960
+        :: treeNodeStoreStmt "usr_s_1" "usr_node_1"
+        :: treeSiblingStoreStmt "usr_s_1"
+             (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Var "ret"])
+        :: .Let ["usr_node_2"] (.some treeNodeHashExpr)
+        :: forsTreeBody.drop 13)) co s = _
+  rw [exec_block_cons_ok (h := show
+    exec (n+19) (treeSelectorLetStmt "usr_s_1" 4 (.Lit (UInt256.ofNat 480))) co s
+      = .ok (treeAfterSel1 s) from
+    exec_tree_selector_let (n := n+1) usrS1Id 4
+      (hmid := eval_lit (n := n+12)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+18) (treeNodeAdrsStmt 3 2 7 1020847100762815390390123822303894568960)
+        co (treeAfterSel1 s)
+      = .ok (treeAfterNode2Adrs s) from
+    exec_tree_node_adrs_mstore (n := n) (treeAfterSel1 s) 3 2 7
+      1020847100762815390390123822303894568960)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+17) (treeNodeStoreStmt "usr_s_1" "usr_node_1") co (treeAfterNode2Adrs s)
+      = .ok (treeAfterNode2Store s) from
+    exec_tree_node_store (n := n+7) (treeAfterNode2Adrs s) usrS1Id usrNode1Id)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+16) (treeSiblingStoreStmt "usr_s_1"
+        (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Var "ret"]))
+        co (treeAfterNode2Store s)
+      = .ok (treeAfterSibling2 s) from
+    exec_tree_sibling_store (n := n+6) usrS1Id
+      (hoff := eval_tree_add_var_var (n := n+2)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+15) (.Let ["usr_node_2"] (.some treeNodeHashExpr)) co (treeAfterSibling2 s)
+      = .ok (treeAfterNode2 s) from
+    exec_tree_node_hash_let (n := n+5) (treeAfterSibling2 s) usrNode2Id)]
+
+/-! ## Node level 3: post-states and the assembled trace (statements 13–17) -/
+
+def usrS2Id : Identifier := "usr_s_2"
+def usrNode3Id : Identifier := "usr_node_3"
+
+/-- State after `let usr_s_2 := …` (statement 13). -/
+def treeAfterSel2 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "usr_s_2"
+    ((((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 3)).land
+        (UInt256.ofNat 31).lnot).land (UInt256.ofNat 224)).land s[retId]!)
+
+/-- State after the level-3 ADRS store (statement 14). -/
+def treeAfterNode3Adrs (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterSel2 s).setMachineState ((treeAfterSel2 s).toMachineState.mstore
+    (UInt256.ofNat 0x3a0)
+    (treeNodeAdrsWord (treeAfterSel2 s) 2 3 3
+      1020847100762815390390123822308189536256))
+
+/-- State after the level-3 node swap store (statement 15). -/
+def treeAfterNode3Store (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode3Adrs s).setMachineState ((treeAfterNode3Adrs s).toMachineState.mstore
+    ((UInt256.ofNat 0x3c0).xor (treeAfterNode3Adrs s)[usrS2Id]!)
+    (treeAfterNode3Adrs s)[usrNode2Id]!)
+
+/-- State after the level-3 sibling swap store (statement 16). -/
+def treeAfterSibling3 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode3Store s).setMachineState ((treeAfterNode3Store s).toMachineState.mstore
+    ((UInt256.ofNat 0x3e0).xor (treeAfterNode3Store s)[usrS2Id]!)
+    (treeMaskedCalldataWord (treeAfterNode3Store s)
+      ((treeAfterNode3Store s)[treePtrId]!.add (UInt256.ofNat 48))))
+
+/-- The value bound to `usr_node_3`. -/
+def treeNode3Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((treeAfterSibling3 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+      (UInt256.ofNat 128)).1).land
+    (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+
+/-- State after the whole level-3 block. -/
+def treeAfterNode3 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  ((treeAfterSibling3 s).setMachineState
+      ((treeAfterSibling3 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+        (UInt256.ofNat 128)).2).insert "usr_node_3" (treeNode3Word s)
+
+/-- **Node level 3 execution.** Body statements 13–17, generically in fuel. -/
+theorem exec_tree_body_node3 (n : Nat) (co : Option YulContract)
+    (s : EvmYul.Yul.State) :
+    exec (n+20) (.Block (forsTreeBody.drop 13)) co s
+      = exec (n+15) (.Block (forsTreeBody.drop 18)) co (treeAfterNode3 s) := by
+  show exec (n+20)
+      (.Block (treeSelectorLetStmt "usr_s_2" 3 (.Lit (UInt256.ofNat 224))
+        :: treeNodeAdrsStmt 2 3 3 1020847100762815390390123822308189536256
+        :: treeNodeStoreStmt "usr_s_2" "usr_node_2"
+        :: treeSiblingStoreStmt "usr_s_2"
+             (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 48)])
+        :: .Let ["usr_node_3"] (.some treeNodeHashExpr)
+        :: forsTreeBody.drop 18)) co s = _
+  rw [exec_block_cons_ok (h := show
+    exec (n+19) (treeSelectorLetStmt "usr_s_2" 3 (.Lit (UInt256.ofNat 224))) co s
+      = .ok (treeAfterSel2 s) from
+    exec_tree_selector_let (n := n+1) usrS2Id 3
+      (hmid := eval_lit (n := n+12)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+18) (treeNodeAdrsStmt 2 3 3 1020847100762815390390123822308189536256)
+        co (treeAfterSel2 s)
+      = .ok (treeAfterNode3Adrs s) from
+    exec_tree_node_adrs_mstore (n := n) (treeAfterSel2 s) 2 3 3
+      1020847100762815390390123822308189536256)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+17) (treeNodeStoreStmt "usr_s_2" "usr_node_2") co (treeAfterNode3Adrs s)
+      = .ok (treeAfterNode3Store s) from
+    exec_tree_node_store (n := n+7) (treeAfterNode3Adrs s) usrS2Id usrNode2Id)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+16) (treeSiblingStoreStmt "usr_s_2"
+        (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 48)]))
+        co (treeAfterNode3Store s)
+      = .ok (treeAfterSibling3 s) from
+    exec_tree_sibling_store (n := n+6) usrS2Id
+      (hoff := eval_tree_add_var_lit (n := n+2)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+15) (.Let ["usr_node_3"] (.some treeNodeHashExpr)) co (treeAfterSibling3 s)
+      = .ok (treeAfterNode3 s) from
+    exec_tree_node_hash_let (n := n+5) (treeAfterSibling3 s) usrNode3Id)]
+
+/-! ## Node level 4: post-states and the assembled trace (statements 18–22) -/
+
+def usrS3Id : Identifier := "usr_s_3"
+def usrNode4Id : Identifier := "usr_node_4"
+
+/-- State after `let usr_s_3 := …` (statement 18; the mid operand is `ret_2`). -/
+def treeAfterSel3 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "usr_s_3"
+    ((((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 2)).land
+        (UInt256.ofNat 31).lnot).land s[ret2Id]!).land s[retId]!)
+
+/-- State after the level-4 ADRS store (statement 19). -/
+def treeAfterNode4Adrs (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterSel3 s).setMachineState ((treeAfterSel3 s).toMachineState.mstore
+    (UInt256.ofNat 0x3a0)
+    (treeNodeAdrsWord (treeAfterSel3 s) 1 4 1
+      1020847100762815390390123822312484503552))
+
+/-- State after the level-4 node swap store (statement 20). -/
+def treeAfterNode4Store (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode4Adrs s).setMachineState ((treeAfterNode4Adrs s).toMachineState.mstore
+    ((UInt256.ofNat 0x3c0).xor (treeAfterNode4Adrs s)[usrS3Id]!)
+    (treeAfterNode4Adrs s)[usrNode3Id]!)
+
+/-- State after the level-4 sibling swap store (statement 21). -/
+def treeAfterSibling4 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode4Store s).setMachineState ((treeAfterNode4Store s).toMachineState.mstore
+    ((UInt256.ofNat 0x3e0).xor (treeAfterNode4Store s)[usrS3Id]!)
+    (treeMaskedCalldataWord (treeAfterNode4Store s)
+      ((treeAfterNode4Store s)[treePtrId]!.add (UInt256.ofNat 64))))
+
+/-- The value bound to `usr_node_4`. -/
+def treeNode4Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((treeAfterSibling4 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+      (UInt256.ofNat 128)).1).land
+    (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+
+/-- State after the whole level-4 block. -/
+def treeAfterNode4 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  ((treeAfterSibling4 s).setMachineState
+      ((treeAfterSibling4 s).toMachineState.keccak256 (UInt256.ofNat 0x380)
+        (UInt256.ofNat 128)).2).insert "usr_node_4" (treeNode4Word s)
+
+/-- **Node level 4 execution.** Body statements 18–22, generically in fuel. -/
+theorem exec_tree_body_node4 (n : Nat) (co : Option YulContract)
+    (s : EvmYul.Yul.State) :
+    exec (n+20) (.Block (forsTreeBody.drop 18)) co s
+      = exec (n+15) (.Block (forsTreeBody.drop 23)) co (treeAfterNode4 s) := by
+  show exec (n+20)
+      (.Block (treeSelectorLetStmt "usr_s_3" 2 (.Var "ret_2")
+        :: treeNodeAdrsStmt 1 4 1 1020847100762815390390123822312484503552
+        :: treeNodeStoreStmt "usr_s_3" "usr_node_3"
+        :: treeSiblingStoreStmt "usr_s_3"
+             (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 64)])
+        :: .Let ["usr_node_4"] (.some treeNodeHashExpr)
+        :: forsTreeBody.drop 23)) co s = _
+  rw [exec_block_cons_ok (h := show
+    exec (n+19) (treeSelectorLetStmt "usr_s_3" 2 (.Var "ret_2")) co s
+      = .ok (treeAfterSel3 s) from
+    exec_tree_selector_let (n := n+1) usrS3Id 2
+      (hmid := eval_var (n := n+12)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+18) (treeNodeAdrsStmt 1 4 1 1020847100762815390390123822312484503552)
+        co (treeAfterSel3 s)
+      = .ok (treeAfterNode4Adrs s) from
+    exec_tree_node_adrs_mstore (n := n) (treeAfterSel3 s) 1 4 1
+      1020847100762815390390123822312484503552)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+17) (treeNodeStoreStmt "usr_s_3" "usr_node_3") co (treeAfterNode4Adrs s)
+      = .ok (treeAfterNode4Store s) from
+    exec_tree_node_store (n := n+7) (treeAfterNode4Adrs s) usrS3Id usrNode3Id)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+16) (treeSiblingStoreStmt "usr_s_3"
+        (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 64)]))
+        co (treeAfterNode4Store s)
+      = .ok (treeAfterSibling4 s) from
+    exec_tree_sibling_store (n := n+6) usrS3Id
+      (hoff := eval_tree_add_var_lit (n := n+2)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+15) (.Let ["usr_node_4"] (.some treeNodeHashExpr)) co (treeAfterSibling4 s)
+      = .ok (treeAfterNode4 s) from
+    exec_tree_node_hash_let (n := n+5) (treeAfterSibling4 s) usrNode4Id)]
+
+/-! ## Node level 5 + the root store (statements 23–27) -/
+
+def usrS4Id : Identifier := "usr_s_4"
+def rootPtrId : Identifier := "usr_rootPtr"
+
+theorem eval_tree_or_var_lit {n co} {s : EvmYul.Yul.State} {x : Identifier}
+    {b : UInt256} :
+    eval (n+6) (.Call (Sum.inl .OR) [.Var x, .Lit b]) co s
+      = .ok (s, s[x]!.lor b) :=
+  eval_binop2 (n := n) (f := UInt256.lor)
+    (hprim := primCall_or (n := n+4) (s := s) s[x]! b)
+    (he₁ := eval_var (n := n+1)) (he₂ := eval_lit (n := n+3))
+
+/-- `mstore(e₁, e₂)` where the value `e₂` threads state (the root store's
+    keccak) and the offset `e₁` is pure in the *post-`e₂`* state. -/
+theorem exec_mstore_thread {n co} {s s' : EvmYul.Yul.State} {a v : UInt256}
+    {e₁ e₂ : Expr}
+    (he₂ : eval (n+4) e₂ co s = .ok (s', v))
+    (he₁ : eval (n+2) e₁ co s' = .ok (s', a)) :
+    exec (n+6) (.ExprStmtCall (.Call (Sum.inl .MSTORE) [e₁, e₂])) co s
+      = .ok (s'.setMachineState (s'.toMachineState.mstore a v)) := by
+  rw [exec_exprstmt_prim (n := n+5)]
+  show execPrimCall (n+5) .MSTORE [] (reverse' (evalArgs (n+5) [e₂, e₁] co s)) = _
+  rw [evalArgs_cons_ok (n := n+4) (h := he₂), evalTail_cons_ok (n := n+3),
+    evalArgs_cons_ok (n := n+2) (h := he₁),
+    evalTail_cons_ok (n := n+1), evalArgs_nil (n := n)]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok (h := primCall_mstore (n := n+4) s' a v), multifill_nil_vars]
+
+/-- State after `let usr_s_4 := …` (statement 23; the mid operand is `ret`). -/
+def treeAfterSel4 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "usr_s_4"
+    ((((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 1)).land
+        (UInt256.ofNat 31).lnot).land s[retId]!).land s[retId]!)
+
+/-- State after the level-5 ADRS store `mstore(0x3a0, or(usr_t, <C5>))`
+    (statement 24). -/
+def treeAfterNode5Adrs (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterSel4 s).setMachineState ((treeAfterSel4 s).toMachineState.mstore
+    (UInt256.ofNat 0x3a0)
+    ((treeAfterSel4 s)[usrTId]!.lor
+      (UInt256.ofNat 1020847100762815390390123822316779470848)))
+
+/-- State after the level-5 node swap store (statement 25). -/
+def treeAfterNode5Store (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode5Adrs s).setMachineState ((treeAfterNode5Adrs s).toMachineState.mstore
+    ((UInt256.ofNat 0x3c0).xor (treeAfterNode5Adrs s)[usrS4Id]!)
+    (treeAfterNode5Adrs s)[usrNode4Id]!)
+
+/-- State after the level-5 sibling swap store (statement 26). -/
+def treeAfterSibling5 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterNode5Store s).setMachineState ((treeAfterNode5Store s).toMachineState.mstore
+    ((UInt256.ofNat 0x3e0).xor (treeAfterNode5Store s)[usrS4Id]!)
+    (treeMaskedCalldataWord (treeAfterNode5Store s)
+      ((treeAfterNode5Store s)[treePtrId]!.add (UInt256.ofNat 80))))
+
+/-- The tree-root word the iteration stores at `usr_rootPtr` (computed from the
+    state entering the root store). -/
+def treeRootWord (s : EvmYul.Yul.State) : UInt256 :=
+  ((s.toMachineState.keccak256 (UInt256.ofNat 0x380) (UInt256.ofNat 128)).1).land
+    (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+
+/-- State after the root keccak (`activeWords` bumped, memory unchanged). -/
+def treeAfterRootKeccak (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.setMachineState (s.toMachineState.keccak256 (UInt256.ofNat 0x380)
+    (UInt256.ofNat 128)).2
+
+/-- State after `mstore(usr_rootPtr, and(keccak256(0x380, 128), not(0xff…ff)))`. -/
+def treeAfterRootStore (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treeAfterRootKeccak s).setMachineState ((treeAfterRootKeccak s).toMachineState.mstore
+    (treeAfterRootKeccak s)[rootPtrId]! (treeRootWord s))
+
+/-- The root store statement (27): the keccak value threads state, then the
+    `usr_rootPtr` offset is read in the post-keccak state. -/
+theorem exec_tree_root_store {n co} (s : EvmYul.Yul.State) :
+    exec (n+12) (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Var "usr_rootPtr", treeNodeHashExpr])) co s
+      = .ok (treeAfterRootStore s) :=
+  exec_mstore_thread (n := n+6)
+    (he₂ := eval_masked_keccak (n := n) (UInt256.ofNat 0x380) (UInt256.ofNat 128)
+      (UInt256.ofNat 0xffffffffffffffffffffffffffffffff))
+    (he₁ := eval_var (n := n+7))
+
+/-- State after the whole level-5 block including the root store. -/
+def treeAfterNode5 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  treeAfterRootStore (treeAfterSibling5 s)
+
+/-- **Node level 5 + root store execution.** Body statements 23–27. -/
+theorem exec_tree_body_node5 (n : Nat) (co : Option YulContract)
+    (s : EvmYul.Yul.State) :
+    exec (n+20) (.Block (forsTreeBody.drop 23)) co s
+      = exec (n+15) (.Block (forsTreeBody.drop 28)) co (treeAfterNode5 s) := by
+  show exec (n+20)
+      (.Block (treeSelectorLetStmt "usr_s_4" 1 (.Var "ret")
+        :: .ExprStmtCall (.Call (Sum.inl .MSTORE)
+             [.Lit (UInt256.ofNat 0x3a0),
+              .Call (Sum.inl .OR)
+                [.Var "usr_t",
+                 .Lit (UInt256.ofNat 1020847100762815390390123822316779470848)]])
+        :: treeNodeStoreStmt "usr_s_4" "usr_node_4"
+        :: treeSiblingStoreStmt "usr_s_4"
+             (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 80)])
+        :: .ExprStmtCall (.Call (Sum.inl .MSTORE)
+             [.Var "usr_rootPtr", treeNodeHashExpr])
+        :: forsTreeBody.drop 28)) co s = _
+  rw [exec_block_cons_ok (h := show
+    exec (n+19) (treeSelectorLetStmt "usr_s_4" 1 (.Var "ret")) co s
+      = .ok (treeAfterSel4 s) from
+    exec_tree_selector_let (n := n+1) usrS4Id 1
+      (hmid := eval_var (n := n+12)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+18) (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Lit (UInt256.ofNat 0x3a0),
+         .Call (Sum.inl .OR)
+           [.Var "usr_t",
+            .Lit (UInt256.ofNat 1020847100762815390390123822316779470848)]]))
+        co (treeAfterSel4 s)
+      = .ok (treeAfterNode5Adrs s) from
+    exec_mstore_lit (n := n+12) (he := eval_tree_or_var_lit (n := n+10)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+17) (treeNodeStoreStmt "usr_s_4" "usr_node_4") co (treeAfterNode5Adrs s)
+      = .ok (treeAfterNode5Store s) from
+    exec_tree_node_store (n := n+7) (treeAfterNode5Adrs s) usrS4Id usrNode4Id)]
+  rw [exec_block_cons_ok (h := show
+    exec (n+16) (treeSiblingStoreStmt "usr_s_4"
+        (.Call (Sum.inl .ADD) [.Var "usr_treePtr", .Lit (UInt256.ofNat 80)]))
+        co (treeAfterNode5Store s)
+      = .ok (treeAfterSibling5 s) from
+    exec_tree_sibling_store (n := n+6) usrS4Id
+      (hoff := eval_tree_add_var_lit (n := n+2)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+15) (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Var "usr_rootPtr", treeNodeHashExpr])) co (treeAfterSibling5 s)
+      = .ok (treeAfterNode5 s) from
+    exec_tree_root_store (n := n+3) (treeAfterSibling5 s))]
+
+/-! ## One full iteration -/
+
+/-- The state after one complete loop-body iteration. -/
+def treeIterState (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  treeAfterNode5 (treeAfterNode4 (treeAfterNode3 (treeAfterNode2 (treeAfterNode1
+    (treeAfterLeafHash s)))))
+
+/-- **One full loop-body iteration**: leaf prefix + five node levels + root
+    store, generically in fuel — the `hbody` input for `loop_step` (A4). -/
+theorem exec_tree_body_iter (n : Nat) (co : Option YulContract)
+    (ss : SharedState .Yul) (vs : VarStore) :
+    exec (n+43) (.Block forsTreeBody) co (.Ok ss vs)
+      = .ok (treeIterState (.Ok ss vs)) := by
+  rw [exec_tree_body_leaf_prefix (n+30) co ss vs,
+    exec_tree_body_node1 (n+20) co,
+    exec_tree_body_node2 (n+15) co,
+    exec_tree_body_node3 (n+10) co,
+    exec_tree_body_node4 (n+5) co,
+    exec_tree_body_node5 n co,
+    show forsTreeBody.drop 28 = [] from rfl]
+  exact exec_block_nil (n := n+14)
 
 end NiceTry.Fors.Bridge
