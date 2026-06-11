@@ -117,6 +117,98 @@ theorem mstore_extract_self (m : MachineState) (a v : UInt256)
   rw [mstore_data_splice m a v hb]
   exact h
 
+/-! ## Boundary-tolerant `mstore` extract algebra
+
+The first loop iteration *extends* memory (loop entry leaves `size = 0x3a0`;
+the scratch stores grow it to `0x400`). These twins of the in-bounds lemmas
+only require the write to start inside (or at the end of) memory
+(`a.toNat ≤ size`), covering overwrite, boundary append, and partial overlap
+uniformly: `ByteArray.write`'s paddings vanish and the suffix extract clamps. -/
+
+/-- The splice formula under `destAddr ≤ dest.size` (suffix may be empty). -/
+theorem byteArray_write_overwrite'
+    (source dest : ByteArray) (destAddr len : Nat)
+    (hlen : len = source.size) (hpos : 0 < len) (hbound : destAddr ≤ dest.size) :
+    (ByteArray.write source 0 dest destAddr len).data
+      = dest.data.extract 0 destAddr ++ source.data
+          ++ dest.data.extract (destAddr + len) dest.size := by
+  subst hlen
+  unfold ByteArray.write
+  rw [if_neg (by omega), if_neg (by omega)]
+  have hds : dest.data.size = dest.size := rfl
+  have hss : source.data.size = source.size := rfl
+  have hz0 : ({ toBitVec := (↑(0 : Nat)) } : USize).toNat = 0 := by simp [USize.toNat]
+  have hspl : min dest.size (destAddr + source.size) - (destAddr + source.size) = 0 := by
+    omega
+  have hdpl : destAddr - dest.size = 0 := by omega
+  simp only [ByteArray.copySlice, ByteArray.data_append, Nat.sub_zero, Nat.min_self,
+    hspl, hdpl, zeroes_data_nil hz0, Array.append_empty, hss, hds,
+    Nat.zero_add, Nat.add_zero]
+  rw [Array.extract_eq_self_of_le (Nat.le_of_eq hss)]
+
+private theorem mstore_data_splice' (m : MachineState) (a v : UInt256)
+    (hb : a.toNat ≤ m.memory.size) :
+    (m.mstore a v).memory.data
+      = m.memory.data.extract 0 a.toNat ++ v.toByteArray.data
+          ++ m.memory.data.extract (a.toNat + 32) m.memory.size := by
+  rw [mstore_memory]
+  exact byteArray_write_overwrite' v.toByteArray m.memory a.toNat 32
+    (uint256_toByteArray_size v).symm (by omega) hb
+
+/-- The new size is the max of the old size and the write end. -/
+theorem mstore_memory_size' (m : MachineState) (a v : UInt256)
+    (hb : a.toNat ≤ m.memory.size) :
+    (m.mstore a v).memory.size = max m.memory.size (a.toNat + 32) := by
+  show (m.mstore a v).memory.data.size = max m.memory.size (a.toNat + 32)
+  rw [mstore_data_splice' m a v hb]
+  have hmd : m.memory.data.size = m.memory.size := rfl
+  have hvs : v.toByteArray.data.size = 32 := uint256_toByteArray_size v
+  simp only [Array.size_append, Array.size_extract]
+  omega
+
+/-- An extract strictly below the write is unchanged (boundary-tolerant). -/
+theorem mstore_extract_below' (m : MachineState) (a v : UInt256) (lo hi : Nat)
+    (hb : a.toNat ≤ m.memory.size) (hhi : hi ≤ a.toNat) :
+    (m.mstore a v).memory.data.extract lo hi = m.memory.data.extract lo hi := by
+  have hmd : m.memory.data.size = m.memory.size := rfl
+  have hvs : v.toByteArray.data.size = 32 := uint256_toByteArray_size v
+  have hA : (m.memory.data.extract 0 a.toNat).size = a.toNat := by
+    simp only [Array.size_extract]; omega
+  have hAw : (m.memory.data.extract 0 a.toNat ++ v.toByteArray.data).size
+      = a.toNat + 32 := by
+    simp only [Array.size_append, hA, hvs]
+  rw [mstore_data_splice' m a v hb]
+  apply Array.ext
+  · simp only [Array.size_extract, Array.size_append, hA, hvs]
+    omega
+  · intro i h1 h2
+    simp only [Array.size_extract] at h2
+    rw [Array.getElem_extract, Array.getElem_extract]
+    rw [Array.getElem_append_left (show lo + i
+        < (m.memory.data.extract 0 a.toNat ++ v.toByteArray.data).size by
+      rw [hAw]; omega)]
+    rw [Array.getElem_append_left (show lo + i
+        < (m.memory.data.extract 0 a.toNat).size by rw [hA]; omega)]
+    rw [Array.getElem_extract]
+    congr 1
+    omega
+
+/-- The extract of exactly the written window is the stored word
+    (boundary-tolerant). -/
+theorem mstore_extract_self' (m : MachineState) (a v : UInt256)
+    (hb : a.toNat ≤ m.memory.size) :
+    (m.mstore a v).memory.data.extract a.toNat (a.toNat + 32)
+      = v.toByteArray.data := by
+  have hA : (m.memory.data.extract 0 a.toNat).size = a.toNat := by
+    have hmd : m.memory.data.size = m.memory.size := rfl
+    simp only [Array.size_extract]; omega
+  have hvs : v.toByteArray.data.size = 32 := uint256_toByteArray_size v
+  have h := extract_middle (m.memory.data.extract 0 a.toNat) v.toByteArray.data
+    (m.memory.data.extract (a.toNat + 32) m.memory.size)
+  rw [hA, hvs] at h
+  rw [mstore_data_splice' m a v hb]
+  exact h
+
 /-! ## Window reads from extract facts -/
 
 /-- Splitting an extract at an interior point. -/

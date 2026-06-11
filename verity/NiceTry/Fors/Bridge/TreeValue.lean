@@ -40,84 +40,207 @@ theorem xor_3c0_32 :
 theorem xor_3e0_32 :
     (UInt256.ofNat 0x3e0).xor (UInt256.ofNat 32) = UInt256.ofNat 0x3c0 := by decide
 
+/-! ## Generic chain-value lemmas (boundary-tolerant)
+
+Each level's keccak runs over a canonical 2/3-store chain on its entry memory
+`M`. These lemmas carry all the extract/bounds work once; the per-level
+discharges below are thin wrappers. The size hypotheses match iteration 0
+exactly (loop entry leaves `size = 0x3a0`; the leaf prefix grows it to
+`0x3e0`; the first node level reaches `0x400`). -/
+
+/-- Masked keccak over the leaf chain `ADRS@0x3a0, sk@0x3c0` = `leafHash`. -/
+theorem masked_keccak_leaf_chain_value
+    (M : MachineState) (pkSeed adrsW skW : UInt256) (tree leafIdx : Nat)
+    (hadrs : adrsW.toNat = shapeLeafAdrsWord tree leafIdx)
+    (hpk : M.memory.data.extract 0x380 0x3a0 = pkSeed.toByteArray.data)
+    (hsize : 0x3a0 ≤ M.memory.size) :
+    ((((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3c0) skW).keccak256
+        (UInt256.ofNat 0x380) (UInt256.ofNat 96)).1.land
+      (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = leafHash pkSeed.toNat (leafAdrs tree leafIdx) skW.toNat := by
+  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have hb1 : (UInt256.ofNat 0x3a0).toNat ≤ M.memory.size := by rw [h3a0]; omega
+  have hsz1 := mstore_memory_size' M (UInt256.ofNat 0x3a0) adrsW hb1
+  rw [h3a0] at hsz1
+  have hb2 : (UInt256.ofNat 0x3c0).toNat
+      ≤ (M.mstore (UInt256.ofNat 0x3a0) adrsW).memory.size := by
+    rw [h3c0, hsz1]; omega
+  have hsz2 := mstore_memory_size'
+    (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3c0) skW hb2
+  rw [h3c0, hsz1] at hsz2
+  rw [masked_keccak_toNat,
+    show (UInt256.ofNat 0x380).toNat = ScratchBase from
+      uint256_ofNat_toNat_of_lt _ (by decide),
+    show (UInt256.ofNat 96).toNat = LeafHashLen from
+      uint256_ofNat_toNat_of_lt _ (by decide)]
+  refine leaf_derivation_of_extracts _ pkSeed adrsW skW tree leafIdx hadrs ?_ ?_ ?_ ?_
+  · rw [hsz2]; unfold ScratchBase LeafHashLen; omega
+  · rw [mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3c0]; omega),
+      mstore_extract_below' _ _ _ _ _ hb1 (by rw [h3a0])]
+    exact hpk
+  · rw [mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3c0])]
+    have h := mstore_extract_self' M (UInt256.ofNat 0x3a0) adrsW hb1
+    rw [h3a0] at h
+    exact h
+  · have h := mstore_extract_self'
+      (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3c0) skW hb2
+    rw [h3c0] at h
+    exact h
+
+/-- Masked keccak over the even node chain `ADRS@0x3a0, node@0x3c0, sib@0x3e0`
+    = `climbLevel` (even branch). -/
+theorem masked_keccak_node_chain_value_even
+    (M : MachineState) (pkSeed adrsW nodeW sibW : UInt256)
+    (tree height pathIdx : Nat)
+    (hEven : pathIdx % 2 = 0)
+    (hadrs : adrsW.toNat = shapeNodeAdrsWord tree height (pathIdx / 2))
+    (hpk : M.memory.data.extract 0x380 0x3a0 = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ M.memory.size) :
+    (((((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3c0) nodeW).mstore
+        (UInt256.ofNat 0x3e0) sibW).keccak256
+        (UInt256.ofNat 0x380) (UInt256.ofNat 128)).1.land
+      (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx nodeW.toNat sibW.toNat := by
+  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have h3e0 : (UInt256.ofNat 0x3e0).toNat = 0x3e0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have hb1 : (UInt256.ofNat 0x3a0).toNat ≤ M.memory.size := by rw [h3a0]; omega
+  have hsz1 := mstore_memory_size' M (UInt256.ofNat 0x3a0) adrsW hb1
+  rw [h3a0] at hsz1
+  have hb2 : (UInt256.ofNat 0x3c0).toNat
+      ≤ (M.mstore (UInt256.ofNat 0x3a0) adrsW).memory.size := by
+    rw [h3c0, hsz1]; omega
+  have hsz2 := mstore_memory_size'
+    (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3c0) nodeW hb2
+  rw [h3c0, hsz1] at hsz2
+  have hb3 : (UInt256.ofNat 0x3e0).toNat
+      ≤ ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore
+          (UInt256.ofNat 0x3c0) nodeW).memory.size := by
+    rw [h3e0, hsz2]; omega
+  have hsz3 := mstore_memory_size'
+    ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3c0) nodeW)
+    (UInt256.ofNat 0x3e0) sibW hb3
+  rw [h3e0, hsz2] at hsz3
+  rw [masked_keccak_toNat,
+    show (UInt256.ofNat 0x380).toNat = ScratchBase from
+      uint256_ofNat_toNat_of_lt _ (by decide),
+    show (UInt256.ofNat 128).toNat = NodeHashLen from
+      uint256_ofNat_toNat_of_lt _ (by decide)]
+  refine node_derivation_climbLevel_even_of_extracts _ pkSeed adrsW nodeW sibW
+    tree height pathIdx hEven hadrs ?_ ?_ ?_ ?_ ?_
+  · rw [hsz3]; unfold ScratchBase NodeHashLen; omega
+  · rw [mstore_extract_below' _ _ _ _ _ hb3 (by rw [h3e0]; omega),
+      mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3c0]; omega),
+      mstore_extract_below' _ _ _ _ _ hb1 (by rw [h3a0])]
+    exact hpk
+  · rw [mstore_extract_below' _ _ _ _ _ hb3 (by rw [h3e0]; omega),
+      mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3c0])]
+    have h := mstore_extract_self' M (UInt256.ofNat 0x3a0) adrsW hb1
+    rw [h3a0] at h
+    exact h
+  · rw [mstore_extract_below' _ _ _ _ _ hb3 (by rw [h3e0])]
+    have h := mstore_extract_self'
+      (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3c0) nodeW hb2
+    rw [h3c0] at h
+    exact h
+  · have h := mstore_extract_self'
+      ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3c0) nodeW)
+      (UInt256.ofNat 0x3e0) sibW hb3
+    rw [h3e0] at h
+    exact h
+
+/-- Masked keccak over the odd node chain `ADRS@0x3a0, node@0x3e0, sib@0x3c0`
+    = `climbLevel` (odd branch; the last store is strictly in-bounds, so the
+    node slot above it survives by the strict right-disjoint lemma). -/
+theorem masked_keccak_node_chain_value_odd
+    (M : MachineState) (pkSeed adrsW nodeW sibW : UInt256)
+    (tree height pathIdx : Nat)
+    (hOdd : pathIdx % 2 ≠ 0)
+    (hadrs : adrsW.toNat = shapeNodeAdrsWord tree height (pathIdx / 2))
+    (hpk : M.memory.data.extract 0x380 0x3a0 = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ M.memory.size) :
+    (((((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3e0) nodeW).mstore
+        (UInt256.ofNat 0x3c0) sibW).keccak256
+        (UInt256.ofNat 0x380) (UInt256.ofNat 128)).1.land
+      (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx nodeW.toNat sibW.toNat := by
+  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have h3e0 : (UInt256.ofNat 0x3e0).toNat = 0x3e0 :=
+    uint256_ofNat_toNat_of_lt _ (by decide)
+  have hb1 : (UInt256.ofNat 0x3a0).toNat ≤ M.memory.size := by rw [h3a0]; omega
+  have hsz1 := mstore_memory_size' M (UInt256.ofNat 0x3a0) adrsW hb1
+  rw [h3a0] at hsz1
+  have hb2 : (UInt256.ofNat 0x3e0).toNat
+      ≤ (M.mstore (UInt256.ofNat 0x3a0) adrsW).memory.size := by
+    rw [h3e0, hsz1]; omega
+  have hsz2 := mstore_memory_size'
+    (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3e0) nodeW hb2
+  rw [h3e0, hsz1] at hsz2
+  have hb3 : (UInt256.ofNat 0x3c0).toNat + 32
+      ≤ ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore
+          (UInt256.ofNat 0x3e0) nodeW).memory.size := by
+    rw [h3c0, hsz2]; omega
+  have hsz3 := mstore_memory_size
+    ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3e0) nodeW)
+    (UInt256.ofNat 0x3c0) sibW hb3
+  rw [masked_keccak_toNat,
+    show (UInt256.ofNat 0x380).toNat = ScratchBase from
+      uint256_ofNat_toNat_of_lt _ (by decide),
+    show (UInt256.ofNat 128).toNat = NodeHashLen from
+      uint256_ofNat_toNat_of_lt _ (by decide)]
+  refine node_derivation_climbLevel_odd_of_extracts _ pkSeed adrsW nodeW sibW
+    tree height pathIdx hOdd hadrs ?_ ?_ ?_ ?_ ?_
+  · rw [hsz3, hsz2]; unfold ScratchBase NodeHashLen; omega
+  · rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3c0]; omega)),
+      mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3e0]; omega),
+      mstore_extract_below' _ _ _ _ _ hb1 (by rw [h3a0])]
+    exact hpk
+  · rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3c0])),
+      mstore_extract_below' _ _ _ _ _ hb2 (by rw [h3e0]; omega)]
+    have h := mstore_extract_self' M (UInt256.ofNat 0x3a0) adrsW hb1
+    rw [h3a0] at h
+    exact h
+  · have h := mstore_extract_self
+      ((M.mstore (UInt256.ofNat 0x3a0) adrsW).mstore (UInt256.ofNat 0x3e0) nodeW)
+      (UInt256.ofNat 0x3c0) sibW hb3
+    rw [h3c0] at h
+    exact h
+  · rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inr (by rw [h3c0]))]
+    have h := mstore_extract_self'
+      (M.mstore (UInt256.ofNat 0x3a0) adrsW) (UInt256.ofNat 0x3e0) nodeW hb2
+    rw [h3e0] at h
+    exact h
+
 /-! ## The leaf value, from the extract-based invariant -/
 
 /-- **Leaf value discharge (extract-based).** With `pkSeed`'s bytes sitting at
-    `[0x380, 0x3a0)` of the entry memory and the scratch window in bounds, the
-    leaf prefix binds `usr_node` to the model `leafHash`. `hadrs` is the
-    ADRS-word arithmetic the loop invariant supplies (A4). -/
+    `[0x380, 0x3a0)` of the entry memory (size at least the scratch base — true
+    already at loop entry, where memory ends exactly at `0x3a0`), the leaf
+    prefix binds `usr_node` to the model `leafHash`. `hadrs` is the ADRS-word
+    arithmetic the loop invariant supplies (A4). -/
 theorem tree_leaf_node_value_of_extract
     (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256) (tree leafIdx : Nat)
     (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
             = pkSeed.toByteArray.data)
-    (hsize : 0x400 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hsize : 0x3a0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
     (hlen : (EvmYul.Yul.State.Ok ss vs)[ret2Id]! = UInt256.ofNat 96)
     (hadrs : (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
         (EvmYul.Yul.State.Ok ss vs)[dCursorId]!).toNat = shapeLeafAdrsWord tree leafIdx) :
     (treeLeafNodeWord (.Ok ss vs)).toNat
       = leafHash pkSeed.toNat (leafAdrs tree leafIdx)
           (treeSkWord (.Ok ss vs)).toNat := by
-  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  -- bounds for the two leaf stores
-  have hb1 : (UInt256.ofNat 0x3a0).toNat + 32
-      ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size := by
-    rw [h3a0]; omega
-  have hsz1 : ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-          (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)).memory.size
-      = (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size :=
-    mstore_memory_size _ _ _ hb1
-  have hb2 : (UInt256.ofNat 0x3c0).toNat + 32
-      ≤ ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-            (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)).memory.size := by
-    rw [h3c0, hsz1]; omega
-  have hsz2 : (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-          (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)).mstore (UInt256.ofNat 0x3c0)
-        (treeSkWord (.Ok ss vs))).memory.size
-      = ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-            (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)).memory.size :=
-    mstore_memory_size _ _ _ hb2
   unfold treeLeafNodeWord
-  rw [treeAfterLeafSk_getElem, hlen, masked_keccak_toNat,
-    treeAfterLeafSk_toMachineState,
-    show (UInt256.ofNat 0x380).toNat = ScratchBase from
-      uint256_ofNat_toNat_of_lt _ (by decide),
-    show (UInt256.ofNat 96).toNat = LeafHashLen from
-      uint256_ofNat_toNat_of_lt _ (by decide)]
-  refine leaf_derivation_of_extracts _ pkSeed
-    (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-      (EvmYul.Yul.State.Ok ss vs)[dCursorId]!)
-    (treeSkWord (.Ok ss vs)) tree leafIdx hadrs ?_ ?_ ?_ ?_
-  · -- window in bounds after both stores
-    rw [hsz2, hsz1]
-    unfold ScratchBase LeafHashLen
-    omega
-  · -- pkSeed slot untouched by both stores
-    rw [mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3c0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb1 (Or.inl (by rw [h3a0]))]
-    exact hpk
-  · -- the ADRS slot: written by store 1, untouched by store 2
-    rw [mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3c0]))]
-    have h := mstore_extract_self (EvmYul.Yul.State.Ok ss vs).toMachineState
-      (UInt256.ofNat 0x3a0)
-      (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-        (EvmYul.Yul.State.Ok ss vs)[dCursorId]!) hb1
-    rw [h3a0] at h
-    exact h
-  · -- the sk slot: written by store 2
-    have h := mstore_extract_self
-      ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeLeafAdrsWord (EvmYul.Yul.State.Ok ss vs)[tLeafBaseId]!
-          (EvmYul.Yul.State.Ok ss vs)[dCursorId]!))
-      (UInt256.ofNat 0x3c0) (treeSkWord (.Ok ss vs)) hb2
-    rw [h3c0] at h
-    exact h
+  rw [treeAfterLeafSk_getElem, hlen, treeAfterLeafSk_toMachineState]
+  exact masked_keccak_leaf_chain_value _ pkSeed _ _ tree leafIdx hadrs hpk hsize
 
 /-! ## Node level 1: lookup resolution -/
 
@@ -178,8 +301,8 @@ theorem treeAfterSibling1_toMachineState (ss : SharedState .Yul) (vs : VarStore)
 
 /-- **Node-1 value discharge, even branch** (`usr_s = 0`: node at `0x3c0`,
     sibling at `0x3e0`). The entry state `.Ok ss vs` is the state at body
-    statement 3 (after the leaf prefix); `hadrs` and the `pathIdx` parity are
-    the arithmetic the A4 invariant supplies. -/
+    statement 3 (after the leaf prefix, hence `0x3e0 ≤ size`); `hadrs` and the
+    `pathIdx` parity are the arithmetic the A4 invariant supplies. -/
 theorem tree_node1_value_of_extract_even
     (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
     (tree height pathIdx : Nat)
@@ -187,7 +310,7 @@ theorem tree_node1_value_of_extract_even
     (hEven : pathIdx % 2 = 0)
     (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
             = pkSeed.toByteArray.data)
-    (hsize : 0x400 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
     (hadrs : (treeNodeAdrsWord (.Ok ss vs) 4 1 15
         1020847100762815390390123822299599601664).toNat
           = shapeNodeAdrsWord tree height (pathIdx / 2)) :
@@ -196,13 +319,6 @@ theorem tree_node1_value_of_extract_even
           ((EvmYul.Yul.State.Ok ss vs)[usrNodeId]!).toNat
           (treeMaskedCalldataWord (.Ok ss vs)
             ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))).toNat := by
-  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  have h3e0 : (UInt256.ofNat 0x3e0).toNat = 0x3e0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  -- the resolved level-1 chain
   have hchain : (treeAfterSibling1 (.Ok ss vs)).toMachineState
       = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
             (treeNodeAdrsWord (.Ok ss vs) 4 1 15
@@ -222,86 +338,10 @@ theorem tree_node1_value_of_extract_even
       treeAfterSel0_getElem_ne ss vs (show treePtrId ≠ "usr_s" by decide)]
     unfold treeMaskedCalldataWord
     rw [treeAfterNode1Store_toState]
-  -- store bounds along the chain
-  have hb1 : (UInt256.ofNat 0x3a0).toNat + 32
-      ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size := by
-    rw [h3a0]; omega
-  have hsz1 := mstore_memory_size (EvmYul.Yul.State.Ok ss vs).toMachineState
-    (UInt256.ofNat 0x3a0)
-    (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664) hb1
-  have hb2 : (UInt256.ofNat 0x3c0).toNat + 32
-      ≤ ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-            1020847100762815390390123822299599601664)).memory.size := by
-    rw [h3c0, hsz1]; omega
-  have hsz2 := mstore_memory_size
-    ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-      (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664))
-    (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]! hb2
-  have hb3 : (UInt256.ofNat 0x3e0).toNat + 32
-      ≤ (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-            (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-              1020847100762815390390123822299599601664)).mstore
-          (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!).memory.size := by
-    rw [h3e0, hsz2, hsz1]; omega
-  have hsz3 := mstore_memory_size
-    (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-          1020847100762815390390123822299599601664)).mstore
-      (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-    (UInt256.ofNat 0x3e0)
-    (treeMaskedCalldataWord (.Ok ss vs)
-      ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))) hb3
   unfold treeNode1Word
-  rw [masked_keccak_toNat, hchain,
-    show (UInt256.ofNat 0x380).toNat = ScratchBase from
-      uint256_ofNat_toNat_of_lt _ (by decide),
-    show (UInt256.ofNat 128).toNat = NodeHashLen from
-      uint256_ofNat_toNat_of_lt _ (by decide)]
-  refine node_derivation_climbLevel_even_of_extracts _ pkSeed
-    (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664)
-    ((EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-    (treeMaskedCalldataWord (.Ok ss vs)
-      ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16)))
-    tree height pathIdx hEven hadrs ?_ ?_ ?_ ?_ ?_
-  · -- window in bounds after the three stores
-    rw [hsz3, hsz2, hsz1]
-    unfold ScratchBase NodeHashLen
-    omega
-  · -- pkSeed slot untouched by all three stores
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3e0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3c0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb1 (Or.inl (by rw [h3a0]))]
-    exact hpk
-  · -- the ADRS slot: written by store 1, untouched by stores 2–3
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3e0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3c0]))]
-    have h := mstore_extract_self (EvmYul.Yul.State.Ok ss vs).toMachineState
-      (UInt256.ofNat 0x3a0)
-      (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-        1020847100762815390390123822299599601664) hb1
-    rw [h3a0] at h
-    exact h
-  · -- the node slot: written by store 2, untouched by store 3
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3e0]))]
-    have h := mstore_extract_self
-      ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-          1020847100762815390390123822299599601664))
-      (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]! hb2
-    rw [h3c0] at h
-    exact h
-  · -- the sibling slot: written by store 3
-    have h := mstore_extract_self
-      (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-            1020847100762815390390123822299599601664)).mstore
-        (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-      (UInt256.ofNat 0x3e0)
-      (treeMaskedCalldataWord (.Ok ss vs)
-        ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))) hb3
-    rw [h3e0] at h
-    exact h
+  rw [hchain]
+  exact masked_keccak_node_chain_value_even _ pkSeed _ _ _ tree height pathIdx
+    hEven hadrs hpk hsize
 
 /-- **Node-1 value discharge, odd branch** (`usr_s = 32`: sibling at `0x3c0`,
     node at `0x3e0`). -/
@@ -312,7 +352,7 @@ theorem tree_node1_value_of_extract_odd
     (hOdd : pathIdx % 2 ≠ 0)
     (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
             = pkSeed.toByteArray.data)
-    (hsize : 0x400 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
     (hadrs : (treeNodeAdrsWord (.Ok ss vs) 4 1 15
         1020847100762815390390123822299599601664).toNat
           = shapeNodeAdrsWord tree height (pathIdx / 2)) :
@@ -321,13 +361,6 @@ theorem tree_node1_value_of_extract_odd
           ((EvmYul.Yul.State.Ok ss vs)[usrNodeId]!).toNat
           (treeMaskedCalldataWord (.Ok ss vs)
             ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))).toNat := by
-  have h3a0 : (UInt256.ofNat 0x3a0).toNat = 0x3a0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  have h3c0 : (UInt256.ofNat 0x3c0).toNat = 0x3c0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  have h3e0 : (UInt256.ofNat 0x3e0).toNat = 0x3e0 :=
-    uint256_ofNat_toNat_of_lt _ (by decide)
-  -- the resolved level-1 chain (swapped slots)
   have hchain : (treeAfterSibling1 (.Ok ss vs)).toMachineState
       = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
             (treeNodeAdrsWord (.Ok ss vs) 4 1 15
@@ -347,85 +380,9 @@ theorem tree_node1_value_of_extract_odd
       treeAfterSel0_getElem_ne ss vs (show treePtrId ≠ "usr_s" by decide)]
     unfold treeMaskedCalldataWord
     rw [treeAfterNode1Store_toState]
-  -- store bounds along the chain
-  have hb1 : (UInt256.ofNat 0x3a0).toNat + 32
-      ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size := by
-    rw [h3a0]; omega
-  have hsz1 := mstore_memory_size (EvmYul.Yul.State.Ok ss vs).toMachineState
-    (UInt256.ofNat 0x3a0)
-    (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664) hb1
-  have hb2 : (UInt256.ofNat 0x3e0).toNat + 32
-      ≤ ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-            1020847100762815390390123822299599601664)).memory.size := by
-    rw [h3e0, hsz1]; omega
-  have hsz2 := mstore_memory_size
-    ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-      (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664))
-    (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]! hb2
-  have hb3 : (UInt256.ofNat 0x3c0).toNat + 32
-      ≤ (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-            (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-              1020847100762815390390123822299599601664)).mstore
-          (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!).memory.size := by
-    rw [h3c0, hsz2, hsz1]; omega
-  have hsz3 := mstore_memory_size
-    (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-          1020847100762815390390123822299599601664)).mstore
-      (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-    (UInt256.ofNat 0x3c0)
-    (treeMaskedCalldataWord (.Ok ss vs)
-      ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))) hb3
   unfold treeNode1Word
-  rw [masked_keccak_toNat, hchain,
-    show (UInt256.ofNat 0x380).toNat = ScratchBase from
-      uint256_ofNat_toNat_of_lt _ (by decide),
-    show (UInt256.ofNat 128).toNat = NodeHashLen from
-      uint256_ofNat_toNat_of_lt _ (by decide)]
-  refine node_derivation_climbLevel_odd_of_extracts _ pkSeed
-    (treeNodeAdrsWord (.Ok ss vs) 4 1 15 1020847100762815390390123822299599601664)
-    ((EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-    (treeMaskedCalldataWord (.Ok ss vs)
-      ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16)))
-    tree height pathIdx hOdd hadrs ?_ ?_ ?_ ?_ ?_
-  · -- window in bounds after the three stores
-    rw [hsz3, hsz2, hsz1]
-    unfold ScratchBase NodeHashLen
-    omega
-  · -- pkSeed slot untouched by all three stores
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3c0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3e0]; omega)),
-      mstore_extract_disjoint _ _ _ _ _ hb1 (Or.inl (by rw [h3a0]))]
-    exact hpk
-  · -- the ADRS slot: written by store 1, untouched by stores 2–3
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inl (by rw [h3c0])),
-      mstore_extract_disjoint _ _ _ _ _ hb2 (Or.inl (by rw [h3e0]; omega))]
-    have h := mstore_extract_self (EvmYul.Yul.State.Ok ss vs).toMachineState
-      (UInt256.ofNat 0x3a0)
-      (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-        1020847100762815390390123822299599601664) hb1
-    rw [h3a0] at h
-    exact h
-  · -- the sibling slot (`0x3c0`): written by store 3
-    have h := mstore_extract_self
-      (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-          (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-            1020847100762815390390123822299599601664)).mstore
-        (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]!)
-      (UInt256.ofNat 0x3c0)
-      (treeMaskedCalldataWord (.Ok ss vs)
-        ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 16))) hb3
-    rw [h3c0] at h
-    exact h
-  · -- the node slot (`0x3e0`): written by store 2, store 3 stops just below it
-    rw [mstore_extract_disjoint _ _ _ _ _ hb3 (Or.inr (by rw [h3c0]))]
-    have h := mstore_extract_self
-      ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
-        (treeNodeAdrsWord (.Ok ss vs) 4 1 15
-          1020847100762815390390123822299599601664))
-      (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNodeId]! hb2
-    rw [h3e0] at h
-    exact h
+  rw [hchain]
+  exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
+    hOdd hadrs hpk hsize
 
 end NiceTry.Fors.Bridge
