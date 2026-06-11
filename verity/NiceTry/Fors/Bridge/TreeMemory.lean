@@ -30,6 +30,14 @@ open NiceTry.Fors
 
 set_option maxHeartbeats 1000000
 
+/-- Concrete-offset `toNat` bridge (public twin of `EvmMemory`'s private lemma,
+    for the value-layer files). -/
+theorem uint256_ofNat_toNat_of_lt (k : Nat) (h : k < EvmYul.UInt256.size) :
+    (UInt256.ofNat k).toNat = k := by
+  unfold UInt256.ofNat UInt256.toNat
+  rw [Fin.ofNat_eq_cast]
+  exact Fin.val_cast_of_lt h
+
 /-! ## In-bounds `mstore` extract algebra -/
 
 /-- An in-bounds `mstore` splices the word into the memory bytes. -/
