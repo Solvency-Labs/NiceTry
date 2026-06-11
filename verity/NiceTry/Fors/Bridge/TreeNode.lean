@@ -712,4 +712,99 @@ theorem exec_tree_body_iter (n : Nat) (co : Option YulContract)
     show forsTreeBody.drop 28 = [] from rfl]
   exact exec_block_nil (n := n+14)
 
+/-- One iteration of an `.Ok` state is `.Ok` (the shape `loop_step`'s `hbody`
+    pattern-matches on). -/
+theorem treeIterState_ok (ss : SharedState .Yul) (vs : VarStore) :
+    ∃ ss' vs', treeIterState (.Ok ss vs) = .Ok ss' vs' := ⟨_, _, rfl⟩
+
+/-! ## The loop condition and the post block -/
+
+/-- The loop condition `lt(usr_t, 25)` evaluates to the comparison word (pure). -/
+theorem eval_tree_cond {n co} {s : EvmYul.Yul.State} :
+    eval (n+6) forsTreeCond co s = .ok (s, s[usrTId]!.lt (UInt256.ofNat 25)) :=
+  eval_binop2 (n := n) (f := UInt256.lt)
+    (hprim := primCall_lt (n := n+4) (s := s) s[usrTId]! (UInt256.ofNat 25))
+    (he₁ := eval_var (n := n+1)) (he₂ := eval_lit (n := n+3))
+
+/-- Post statement 1: `usr_t := add(usr_t, 1)`. -/
+def treePost1 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  s.insert "usr_t" (s[usrTId]!.add (UInt256.ofNat 1))
+
+/-- Post statement 2: `usr_treePtr := add(usr_treePtr, ret_2)`. -/
+def treePost2 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treePost1 s).insert "usr_treePtr"
+    ((treePost1 s)[treePtrId]!.add (treePost1 s)[ret2Id]!)
+
+/-- Post statement 3: `usr_rootPtr := add(usr_rootPtr, ret)`. -/
+def treePost3 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treePost2 s).insert "usr_rootPtr"
+    ((treePost2 s)[rootPtrId]!.add (treePost2 s)[retId]!)
+
+/-- Post statement 4: `usr_tLeafBase := add(usr_tLeafBase, ret)`. -/
+def treePost4 (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treePost3 s).insert "usr_tLeafBase"
+    ((treePost3 s)[tLeafBaseId]!.add (treePost3 s)[retId]!)
+
+/-- State after the whole post block (incl. `usr_dCursor := shr(5, usr_dCursor)`). -/
+def treePostState (s : EvmYul.Yul.State) : EvmYul.Yul.State :=
+  (treePost4 s).insert "usr_dCursor"
+    (UInt256.shiftRight (treePost4 s)[dCursorId]! (UInt256.ofNat 5))
+
+/-- **Post-block execution** — the `hpost` input for `loop_step` (A4). -/
+theorem exec_tree_post (n : Nat) (co : Option YulContract)
+    (s : EvmYul.Yul.State) :
+    exec (n+11) (.Block forsTreePost) co s = .ok (treePostState s) := by
+  show exec (n+11)
+      (.Block (.Let ["usr_t"] (.some (.Call (Sum.inl .ADD)
+            [.Var "usr_t", .Lit (UInt256.ofNat 1)]))
+        :: .Let ["usr_treePtr"] (.some (.Call (Sum.inl .ADD)
+            [.Var "usr_treePtr", .Var "ret_2"]))
+        :: .Let ["usr_rootPtr"] (.some (.Call (Sum.inl .ADD)
+            [.Var "usr_rootPtr", .Var "ret"]))
+        :: .Let ["usr_tLeafBase"] (.some (.Call (Sum.inl .ADD)
+            [.Var "usr_tLeafBase", .Var "ret"]))
+        :: .Let ["usr_dCursor"] (.some (.Call (Sum.inl .SHR)
+            [.Lit (UInt256.ofNat 5), .Var "usr_dCursor"]))
+        :: [])) co s = _
+  rw [exec_block_cons_ok (h := show
+    exec (n+10) (.Let ["usr_t"] (.some (.Call (Sum.inl .ADD)
+        [.Var "usr_t", .Lit (UInt256.ofNat 1)]))) co s
+      = .ok (treePost1 s) from
+    exec_let_binop (n := n+4)
+      (hprim := primCall_add (n := n+8) (s := s) s[usrTId]! (UInt256.ofNat 1))
+      (he₁ := eval_var (n := n+5)) (he₂ := eval_lit (n := n+7)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+9) (.Let ["usr_treePtr"] (.some (.Call (Sum.inl .ADD)
+        [.Var "usr_treePtr", .Var "ret_2"]))) co (treePost1 s)
+      = .ok (treePost2 s) from
+    exec_let_binop (n := n+3)
+      (hprim := primCall_add (n := n+7) (s := treePost1 s)
+        (treePost1 s)[treePtrId]! (treePost1 s)[ret2Id]!)
+      (he₁ := eval_var (n := n+4)) (he₂ := eval_var (n := n+6)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+8) (.Let ["usr_rootPtr"] (.some (.Call (Sum.inl .ADD)
+        [.Var "usr_rootPtr", .Var "ret"]))) co (treePost2 s)
+      = .ok (treePost3 s) from
+    exec_let_binop (n := n+2)
+      (hprim := primCall_add (n := n+6) (s := treePost2 s)
+        (treePost2 s)[rootPtrId]! (treePost2 s)[retId]!)
+      (he₁ := eval_var (n := n+3)) (he₂ := eval_var (n := n+5)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+7) (.Let ["usr_tLeafBase"] (.some (.Call (Sum.inl .ADD)
+        [.Var "usr_tLeafBase", .Var "ret"]))) co (treePost3 s)
+      = .ok (treePost4 s) from
+    exec_let_binop (n := n+1)
+      (hprim := primCall_add (n := n+5) (s := treePost3 s)
+        (treePost3 s)[tLeafBaseId]! (treePost3 s)[retId]!)
+      (he₁ := eval_var (n := n+2)) (he₂ := eval_var (n := n+4)))]
+  rw [exec_block_cons_ok (h := show
+    exec (n+6) (.Let ["usr_dCursor"] (.some (.Call (Sum.inl .SHR)
+        [.Lit (UInt256.ofNat 5), .Var "usr_dCursor"]))) co (treePost4 s)
+      = .ok (treePostState s) from
+    exec_let_binop (n := n)
+      (hprim := primCall_shr (n := n+4) (s := treePost4 s)
+        (UInt256.ofNat 5) (treePost4 s)[dCursorId]!)
+      (he₁ := eval_lit (n := n+1)) (he₂ := eval_var (n := n+3)))]
+  exact exec_block_nil (n := n+5)
+
 end NiceTry.Fors.Bridge
