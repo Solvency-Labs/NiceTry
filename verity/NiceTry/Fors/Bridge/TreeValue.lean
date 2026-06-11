@@ -385,4 +385,551 @@ theorem tree_node1_value_of_extract_odd
   exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
     hOdd hadrs hpk hsize
 
+/-! ## Generic helpers for the level wrappers -/
+
+/-- The node-ADRS word ignores any inserted variable other than
+    `usr_t`/`usr_dCursor`. -/
+theorem treeNodeAdrsWord_insert (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) (v : EvmYul.Literal)
+    (h1 : usrTId ≠ x) (h2 : dCursorId ≠ x) (k j m c : Nat) :
+    treeNodeAdrsWord ((EvmYul.Yul.State.Ok ss vs).insert x v) k j m c
+      = treeNodeAdrsWord (.Ok ss vs) k j m c := by
+  unfold treeNodeAdrsWord
+  rw [state_getElem_insert_ne ss vs v h1, state_getElem_insert_ne ss vs v h2]
+
+
+/-! ## Node level 2: lookup resolution + value -/
+
+/-- The level-2 swap selector value (mirrors `treeAfterSel1`'s insert). -/
+def treeSelector1Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 4)).land
+      (UInt256.ofNat 31).lnot).land (UInt256.ofNat 480)).land s[retId]!
+
+theorem treeAfterSel1_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel1 (.Ok ss vs)).toMachineState
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState := rfl
+
+theorem treeAfterSel1_getElem_self (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel1 (.Ok ss vs))[usrS1Id]! = treeSelector1Word (.Ok ss vs) :=
+  state_getElem_insert_self ss vs _ _
+
+theorem treeAfterSel1_getElem_ne (ss : SharedState .Yul) (vs : VarStore)
+    {y : Identifier} (h : y ≠ "usr_s_1") :
+    (treeAfterSel1 (.Ok ss vs))[y]! = (EvmYul.Yul.State.Ok ss vs)[y]! :=
+  state_getElem_insert_ne ss vs (treeSelector1Word (.Ok ss vs)) h
+
+theorem treeAfterNode2Adrs_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode2Adrs (.Ok ss vs))[x]! = (treeAfterSel1 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode2Store_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode2Store (.Ok ss vs))[x]! = (treeAfterSel1 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode2Store_toState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterNode2Store (.Ok ss vs)).toState
+      = (EvmYul.Yul.State.Ok ss vs).toState := rfl
+
+theorem treeNodeAdrsWord_after_sel1 (ss : SharedState .Yul) (vs : VarStore)
+    (k j m c : Nat) :
+    treeNodeAdrsWord (treeAfterSel1 (.Ok ss vs)) k j m c
+      = treeNodeAdrsWord (.Ok ss vs) k j m c :=
+  treeNodeAdrsWord_insert ss vs "usr_s_1" _ (by decide) (by decide) k j m c
+
+/-- The level-2 chain, verbatim from the defs (lookups still unresolved). -/
+theorem treeAfterSibling2_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSibling2 (.Ok ss vs)).toMachineState
+      = (((treeAfterSel1 (.Ok ss vs)).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (treeAfterSel1 (.Ok ss vs)) 3 2 7
+              1020847100762815390390123822303894568960)).mstore
+          ((UInt256.ofNat 0x3c0).xor (treeAfterNode2Adrs (.Ok ss vs))[usrS1Id]!)
+          (treeAfterNode2Adrs (.Ok ss vs))[usrNode1Id]!).mstore
+          ((UInt256.ofNat 0x3e0).xor (treeAfterNode2Store (.Ok ss vs))[usrS1Id]!)
+          (treeMaskedCalldataWord (treeAfterNode2Store (.Ok ss vs))
+            ((treeAfterNode2Store (.Ok ss vs))[treePtrId]!.add (treeAfterNode2Store (.Ok ss vs))[retId]!)) := rfl
+
+
+/-- **Node-2 value discharge, even branch.** -/
+theorem tree_node2_value_of_extract_even
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector1Word (.Ok ss vs) = UInt256.ofNat 0)
+    (hEven : pathIdx % 2 = 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 3 2 7
+        1020847100762815390390123822303894568960).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode2Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode1Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (EvmYul.Yul.State.Ok ss vs)[retId]!)).toNat := by
+  have hchain : (treeAfterSibling2 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 3 2 7
+              1020847100762815390390123822303894568960)).mstore
+          (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNode1Id]!).mstore
+          (UInt256.ofNat 0x3e0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (EvmYul.Yul.State.Ok ss vs)[retId]!)) := by
+    rw [treeAfterSibling2_toMachineState, treeAfterSel1_toMachineState,
+      treeAfterNode2Adrs_getElem ss vs usrS1Id,
+      treeAfterNode2Adrs_getElem ss vs usrNode1Id,
+      treeAfterNode2Store_getElem ss vs usrS1Id,
+      treeAfterNode2Store_getElem ss vs treePtrId,
+      treeAfterNode2Store_getElem ss vs retId,
+      treeAfterSel1_getElem_self, hsel, xor_3c0_zero, xor_3e0_zero,
+      treeNodeAdrsWord_after_sel1,
+      treeAfterSel1_getElem_ne ss vs (show usrNode1Id ≠ "usr_s_1" by decide),
+      treeAfterSel1_getElem_ne ss vs (show treePtrId ≠ "usr_s_1" by decide),
+      treeAfterSel1_getElem_ne ss vs (show retId ≠ "usr_s_1" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode2Store_toState]
+  unfold treeNode2Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_even _ pkSeed _ _ _ tree height pathIdx
+    hEven hadrs hpk hsize
+
+
+/-- **Node-2 value discharge, odd branch.** -/
+theorem tree_node2_value_of_extract_odd
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector1Word (.Ok ss vs) = UInt256.ofNat 32)
+    (hOdd : pathIdx % 2 ≠ 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 3 2 7
+        1020847100762815390390123822303894568960).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode2Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode1Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (EvmYul.Yul.State.Ok ss vs)[retId]!)).toNat := by
+  have hchain : (treeAfterSibling2 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 3 2 7
+              1020847100762815390390123822303894568960)).mstore
+          (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNode1Id]!).mstore
+          (UInt256.ofNat 0x3c0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (EvmYul.Yul.State.Ok ss vs)[retId]!)) := by
+    rw [treeAfterSibling2_toMachineState, treeAfterSel1_toMachineState,
+      treeAfterNode2Adrs_getElem ss vs usrS1Id,
+      treeAfterNode2Adrs_getElem ss vs usrNode1Id,
+      treeAfterNode2Store_getElem ss vs usrS1Id,
+      treeAfterNode2Store_getElem ss vs treePtrId,
+      treeAfterNode2Store_getElem ss vs retId,
+      treeAfterSel1_getElem_self, hsel, xor_3c0_32, xor_3e0_32,
+      treeNodeAdrsWord_after_sel1,
+      treeAfterSel1_getElem_ne ss vs (show usrNode1Id ≠ "usr_s_1" by decide),
+      treeAfterSel1_getElem_ne ss vs (show treePtrId ≠ "usr_s_1" by decide),
+      treeAfterSel1_getElem_ne ss vs (show retId ≠ "usr_s_1" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode2Store_toState]
+  unfold treeNode2Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
+    hOdd hadrs hpk hsize
+
+/-! ## Node level 3: lookup resolution + value -/
+
+/-- The level-3 swap selector value (mirrors `treeAfterSel2`'s insert). -/
+def treeSelector2Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 3)).land
+      (UInt256.ofNat 31).lnot).land (UInt256.ofNat 224)).land s[retId]!
+
+theorem treeAfterSel2_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel2 (.Ok ss vs)).toMachineState
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState := rfl
+
+theorem treeAfterSel2_getElem_self (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel2 (.Ok ss vs))[usrS2Id]! = treeSelector2Word (.Ok ss vs) :=
+  state_getElem_insert_self ss vs _ _
+
+theorem treeAfterSel2_getElem_ne (ss : SharedState .Yul) (vs : VarStore)
+    {y : Identifier} (h : y ≠ "usr_s_2") :
+    (treeAfterSel2 (.Ok ss vs))[y]! = (EvmYul.Yul.State.Ok ss vs)[y]! :=
+  state_getElem_insert_ne ss vs (treeSelector2Word (.Ok ss vs)) h
+
+theorem treeAfterNode3Adrs_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode3Adrs (.Ok ss vs))[x]! = (treeAfterSel2 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode3Store_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode3Store (.Ok ss vs))[x]! = (treeAfterSel2 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode3Store_toState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterNode3Store (.Ok ss vs)).toState
+      = (EvmYul.Yul.State.Ok ss vs).toState := rfl
+
+theorem treeNodeAdrsWord_after_sel2 (ss : SharedState .Yul) (vs : VarStore)
+    (k j m c : Nat) :
+    treeNodeAdrsWord (treeAfterSel2 (.Ok ss vs)) k j m c
+      = treeNodeAdrsWord (.Ok ss vs) k j m c :=
+  treeNodeAdrsWord_insert ss vs "usr_s_2" _ (by decide) (by decide) k j m c
+
+/-- The level-3 chain, verbatim from the defs (lookups still unresolved). -/
+theorem treeAfterSibling3_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSibling3 (.Ok ss vs)).toMachineState
+      = (((treeAfterSel2 (.Ok ss vs)).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (treeAfterSel2 (.Ok ss vs)) 2 3 3
+              1020847100762815390390123822308189536256)).mstore
+          ((UInt256.ofNat 0x3c0).xor (treeAfterNode3Adrs (.Ok ss vs))[usrS2Id]!)
+          (treeAfterNode3Adrs (.Ok ss vs))[usrNode2Id]!).mstore
+          ((UInt256.ofNat 0x3e0).xor (treeAfterNode3Store (.Ok ss vs))[usrS2Id]!)
+          (treeMaskedCalldataWord (treeAfterNode3Store (.Ok ss vs))
+            ((treeAfterNode3Store (.Ok ss vs))[treePtrId]!.add (UInt256.ofNat 48))) := rfl
+
+
+/-- **Node-3 value discharge, even branch.** -/
+theorem tree_node3_value_of_extract_even
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector2Word (.Ok ss vs) = UInt256.ofNat 0)
+    (hEven : pathIdx % 2 = 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 2 3 3
+        1020847100762815390390123822308189536256).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode3Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode2Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 48))).toNat := by
+  have hchain : (treeAfterSibling3 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 2 3 3
+              1020847100762815390390123822308189536256)).mstore
+          (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNode2Id]!).mstore
+          (UInt256.ofNat 0x3e0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 48))) := by
+    rw [treeAfterSibling3_toMachineState, treeAfterSel2_toMachineState,
+      treeAfterNode3Adrs_getElem ss vs usrS2Id,
+      treeAfterNode3Adrs_getElem ss vs usrNode2Id,
+      treeAfterNode3Store_getElem ss vs usrS2Id,
+      treeAfterNode3Store_getElem ss vs treePtrId,
+      treeAfterSel2_getElem_self, hsel, xor_3c0_zero, xor_3e0_zero,
+      treeNodeAdrsWord_after_sel2,
+      treeAfterSel2_getElem_ne ss vs (show usrNode2Id ≠ "usr_s_2" by decide),
+      treeAfterSel2_getElem_ne ss vs (show treePtrId ≠ "usr_s_2" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode3Store_toState]
+  unfold treeNode3Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_even _ pkSeed _ _ _ tree height pathIdx
+    hEven hadrs hpk hsize
+
+
+/-- **Node-3 value discharge, odd branch.** -/
+theorem tree_node3_value_of_extract_odd
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector2Word (.Ok ss vs) = UInt256.ofNat 32)
+    (hOdd : pathIdx % 2 ≠ 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 2 3 3
+        1020847100762815390390123822308189536256).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode3Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode2Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 48))).toNat := by
+  have hchain : (treeAfterSibling3 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 2 3 3
+              1020847100762815390390123822308189536256)).mstore
+          (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNode2Id]!).mstore
+          (UInt256.ofNat 0x3c0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 48))) := by
+    rw [treeAfterSibling3_toMachineState, treeAfterSel2_toMachineState,
+      treeAfterNode3Adrs_getElem ss vs usrS2Id,
+      treeAfterNode3Adrs_getElem ss vs usrNode2Id,
+      treeAfterNode3Store_getElem ss vs usrS2Id,
+      treeAfterNode3Store_getElem ss vs treePtrId,
+      treeAfterSel2_getElem_self, hsel, xor_3c0_32, xor_3e0_32,
+      treeNodeAdrsWord_after_sel2,
+      treeAfterSel2_getElem_ne ss vs (show usrNode2Id ≠ "usr_s_2" by decide),
+      treeAfterSel2_getElem_ne ss vs (show treePtrId ≠ "usr_s_2" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode3Store_toState]
+  unfold treeNode3Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
+    hOdd hadrs hpk hsize
+
+/-! ## Node level 4: lookup resolution + value -/
+
+/-- The level-4 swap selector value (mirrors `treeAfterSel3`'s insert). -/
+def treeSelector3Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 2)).land
+      (UInt256.ofNat 31).lnot).land s[ret2Id]!).land s[retId]!
+
+theorem treeAfterSel3_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel3 (.Ok ss vs)).toMachineState
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState := rfl
+
+theorem treeAfterSel3_getElem_self (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel3 (.Ok ss vs))[usrS3Id]! = treeSelector3Word (.Ok ss vs) :=
+  state_getElem_insert_self ss vs _ _
+
+theorem treeAfterSel3_getElem_ne (ss : SharedState .Yul) (vs : VarStore)
+    {y : Identifier} (h : y ≠ "usr_s_3") :
+    (treeAfterSel3 (.Ok ss vs))[y]! = (EvmYul.Yul.State.Ok ss vs)[y]! :=
+  state_getElem_insert_ne ss vs (treeSelector3Word (.Ok ss vs)) h
+
+theorem treeAfterNode4Adrs_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode4Adrs (.Ok ss vs))[x]! = (treeAfterSel3 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode4Store_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode4Store (.Ok ss vs))[x]! = (treeAfterSel3 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode4Store_toState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterNode4Store (.Ok ss vs)).toState
+      = (EvmYul.Yul.State.Ok ss vs).toState := rfl
+
+theorem treeNodeAdrsWord_after_sel3 (ss : SharedState .Yul) (vs : VarStore)
+    (k j m c : Nat) :
+    treeNodeAdrsWord (treeAfterSel3 (.Ok ss vs)) k j m c
+      = treeNodeAdrsWord (.Ok ss vs) k j m c :=
+  treeNodeAdrsWord_insert ss vs "usr_s_3" _ (by decide) (by decide) k j m c
+
+/-- The level-4 chain, verbatim from the defs (lookups still unresolved). -/
+theorem treeAfterSibling4_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSibling4 (.Ok ss vs)).toMachineState
+      = (((treeAfterSel3 (.Ok ss vs)).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (treeAfterSel3 (.Ok ss vs)) 1 4 1
+              1020847100762815390390123822312484503552)).mstore
+          ((UInt256.ofNat 0x3c0).xor (treeAfterNode4Adrs (.Ok ss vs))[usrS3Id]!)
+          (treeAfterNode4Adrs (.Ok ss vs))[usrNode3Id]!).mstore
+          ((UInt256.ofNat 0x3e0).xor (treeAfterNode4Store (.Ok ss vs))[usrS3Id]!)
+          (treeMaskedCalldataWord (treeAfterNode4Store (.Ok ss vs))
+            ((treeAfterNode4Store (.Ok ss vs))[treePtrId]!.add (UInt256.ofNat 64))) := rfl
+
+
+/-- **Node-4 value discharge, even branch.** -/
+theorem tree_node4_value_of_extract_even
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector3Word (.Ok ss vs) = UInt256.ofNat 0)
+    (hEven : pathIdx % 2 = 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 1 4 1
+        1020847100762815390390123822312484503552).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode4Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode3Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 64))).toNat := by
+  have hchain : (treeAfterSibling4 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 1 4 1
+              1020847100762815390390123822312484503552)).mstore
+          (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNode3Id]!).mstore
+          (UInt256.ofNat 0x3e0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 64))) := by
+    rw [treeAfterSibling4_toMachineState, treeAfterSel3_toMachineState,
+      treeAfterNode4Adrs_getElem ss vs usrS3Id,
+      treeAfterNode4Adrs_getElem ss vs usrNode3Id,
+      treeAfterNode4Store_getElem ss vs usrS3Id,
+      treeAfterNode4Store_getElem ss vs treePtrId,
+      treeAfterSel3_getElem_self, hsel, xor_3c0_zero, xor_3e0_zero,
+      treeNodeAdrsWord_after_sel3,
+      treeAfterSel3_getElem_ne ss vs (show usrNode3Id ≠ "usr_s_3" by decide),
+      treeAfterSel3_getElem_ne ss vs (show treePtrId ≠ "usr_s_3" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode4Store_toState]
+  unfold treeNode4Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_even _ pkSeed _ _ _ tree height pathIdx
+    hEven hadrs hpk hsize
+
+
+/-- **Node-4 value discharge, odd branch.** -/
+theorem tree_node4_value_of_extract_odd
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector3Word (.Ok ss vs) = UInt256.ofNat 32)
+    (hOdd : pathIdx % 2 ≠ 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : (treeNodeAdrsWord (.Ok ss vs) 1 4 1
+        1020847100762815390390123822312484503552).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeNode4Word (.Ok ss vs)).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode3Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 64))).toNat := by
+  have hchain : (treeAfterSibling4 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            (treeNodeAdrsWord (.Ok ss vs) 1 4 1
+              1020847100762815390390123822312484503552)).mstore
+          (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNode3Id]!).mstore
+          (UInt256.ofNat 0x3c0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 64))) := by
+    rw [treeAfterSibling4_toMachineState, treeAfterSel3_toMachineState,
+      treeAfterNode4Adrs_getElem ss vs usrS3Id,
+      treeAfterNode4Adrs_getElem ss vs usrNode3Id,
+      treeAfterNode4Store_getElem ss vs usrS3Id,
+      treeAfterNode4Store_getElem ss vs treePtrId,
+      treeAfterSel3_getElem_self, hsel, xor_3c0_32, xor_3e0_32,
+      treeNodeAdrsWord_after_sel3,
+      treeAfterSel3_getElem_ne ss vs (show usrNode3Id ≠ "usr_s_3" by decide),
+      treeAfterSel3_getElem_ne ss vs (show treePtrId ≠ "usr_s_3" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode4Store_toState]
+  unfold treeNode4Word
+  rw [hchain]
+  exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
+    hOdd hadrs hpk hsize
+
+/-! ## Node level 5 (the tree root): lookup resolution + value -/
+
+/-- The level-5 swap selector value (mirrors `treeAfterSel4`'s insert). -/
+def treeSelector4Word (s : EvmYul.Yul.State) : UInt256 :=
+  (((UInt256.shiftLeft s[dCursorId]! (UInt256.ofNat 1)).land
+      (UInt256.ofNat 31).lnot).land s[retId]!).land s[retId]!
+
+theorem treeAfterSel4_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel4 (.Ok ss vs)).toMachineState
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState := rfl
+
+theorem treeAfterSel4_getElem_self (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSel4 (.Ok ss vs))[usrS4Id]! = treeSelector4Word (.Ok ss vs) :=
+  state_getElem_insert_self ss vs _ _
+
+theorem treeAfterSel4_getElem_ne (ss : SharedState .Yul) (vs : VarStore)
+    {y : Identifier} (h : y ≠ "usr_s_4") :
+    (treeAfterSel4 (.Ok ss vs))[y]! = (EvmYul.Yul.State.Ok ss vs)[y]! :=
+  state_getElem_insert_ne ss vs (treeSelector4Word (.Ok ss vs)) h
+
+theorem treeAfterNode5Adrs_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode5Adrs (.Ok ss vs))[x]! = (treeAfterSel4 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode5Store_getElem (ss : SharedState .Yul) (vs : VarStore)
+    (x : Identifier) :
+    (treeAfterNode5Store (.Ok ss vs))[x]! = (treeAfterSel4 (.Ok ss vs))[x]! := rfl
+
+theorem treeAfterNode5Store_toState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterNode5Store (.Ok ss vs)).toState
+      = (EvmYul.Yul.State.Ok ss vs).toState := rfl
+
+/-- The level-5 chain, verbatim from the defs (lookups still unresolved). -/
+theorem treeAfterSibling5_toMachineState (ss : SharedState .Yul) (vs : VarStore) :
+    (treeAfterSibling5 (.Ok ss vs)).toMachineState
+      = (((treeAfterSel4 (.Ok ss vs)).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            ((treeAfterSel4 (.Ok ss vs))[usrTId]!.lor
+              (UInt256.ofNat 1020847100762815390390123822316779470848))).mstore
+          ((UInt256.ofNat 0x3c0).xor (treeAfterNode5Adrs (.Ok ss vs))[usrS4Id]!)
+          (treeAfterNode5Adrs (.Ok ss vs))[usrNode4Id]!).mstore
+          ((UInt256.ofNat 0x3e0).xor (treeAfterNode5Store (.Ok ss vs))[usrS4Id]!)
+          (treeMaskedCalldataWord (treeAfterNode5Store (.Ok ss vs))
+            ((treeAfterNode5Store (.Ok ss vs))[treePtrId]!.add (UInt256.ofNat 80))) := rfl
+
+/-- **Root value discharge, even branch** — the value the iteration stores
+    at `usr_rootPtr` is the level-5 `climbLevel`. -/
+theorem tree_root_value_of_extract_even
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector4Word (.Ok ss vs) = UInt256.ofNat 0)
+    (hEven : pathIdx % 2 = 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : ((EvmYul.Yul.State.Ok ss vs)[usrTId]!.lor
+        (UInt256.ofNat 1020847100762815390390123822316779470848)).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeRootWord (treeAfterSibling5 (.Ok ss vs))).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode4Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 80))).toNat := by
+  have hchain : (treeAfterSibling5 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            ((EvmYul.Yul.State.Ok ss vs)[usrTId]!.lor
+              (UInt256.ofNat 1020847100762815390390123822316779470848))).mstore
+          (UInt256.ofNat 0x3c0) (EvmYul.Yul.State.Ok ss vs)[usrNode4Id]!).mstore
+          (UInt256.ofNat 0x3e0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 80))) := by
+    rw [treeAfterSibling5_toMachineState, treeAfterSel4_toMachineState,
+      treeAfterNode5Adrs_getElem ss vs usrS4Id,
+      treeAfterNode5Adrs_getElem ss vs usrNode4Id,
+      treeAfterNode5Store_getElem ss vs usrS4Id,
+      treeAfterNode5Store_getElem ss vs treePtrId,
+      treeAfterSel4_getElem_self, hsel, xor_3c0_zero, xor_3e0_zero,
+      treeAfterSel4_getElem_ne ss vs (show usrTId ≠ "usr_s_4" by decide),
+      treeAfterSel4_getElem_ne ss vs (show usrNode4Id ≠ "usr_s_4" by decide),
+      treeAfterSel4_getElem_ne ss vs (show treePtrId ≠ "usr_s_4" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode5Store_toState]
+  unfold treeRootWord
+  rw [hchain]
+  exact masked_keccak_node_chain_value_even _ pkSeed _ _ _ tree height pathIdx
+    hEven hadrs hpk hsize
+
+/-- **Root value discharge, odd branch** — the value the iteration stores
+    at `usr_rootPtr` is the level-5 `climbLevel`. -/
+theorem tree_root_value_of_extract_odd
+    (ss : SharedState .Yul) (vs : VarStore) (pkSeed : UInt256)
+    (tree height pathIdx : Nat)
+    (hsel : treeSelector4Word (.Ok ss vs) = UInt256.ofNat 32)
+    (hOdd : pathIdx % 2 ≠ 0)
+    (hpk : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract 0x380 0x3a0
+            = pkSeed.toByteArray.data)
+    (hsize : 0x3e0 ≤ (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size)
+    (hadrs : ((EvmYul.Yul.State.Ok ss vs)[usrTId]!.lor
+        (UInt256.ofNat 1020847100762815390390123822316779470848)).toNat
+          = shapeNodeAdrsWord tree height (pathIdx / 2)) :
+    (treeRootWord (treeAfterSibling5 (.Ok ss vs))).toNat
+      = climbLevel pkSeed.toNat tree height pathIdx
+          ((EvmYul.Yul.State.Ok ss vs)[usrNode4Id]!).toNat
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 80))).toNat := by
+  have hchain : (treeAfterSibling5 (.Ok ss vs)).toMachineState
+      = (((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x3a0)
+            ((EvmYul.Yul.State.Ok ss vs)[usrTId]!.lor
+              (UInt256.ofNat 1020847100762815390390123822316779470848))).mstore
+          (UInt256.ofNat 0x3e0) (EvmYul.Yul.State.Ok ss vs)[usrNode4Id]!).mstore
+          (UInt256.ofNat 0x3c0)
+          (treeMaskedCalldataWord (.Ok ss vs)
+            ((EvmYul.Yul.State.Ok ss vs)[treePtrId]!.add (UInt256.ofNat 80))) := by
+    rw [treeAfterSibling5_toMachineState, treeAfterSel4_toMachineState,
+      treeAfterNode5Adrs_getElem ss vs usrS4Id,
+      treeAfterNode5Adrs_getElem ss vs usrNode4Id,
+      treeAfterNode5Store_getElem ss vs usrS4Id,
+      treeAfterNode5Store_getElem ss vs treePtrId,
+      treeAfterSel4_getElem_self, hsel, xor_3c0_32, xor_3e0_32,
+      treeAfterSel4_getElem_ne ss vs (show usrTId ≠ "usr_s_4" by decide),
+      treeAfterSel4_getElem_ne ss vs (show usrNode4Id ≠ "usr_s_4" by decide),
+      treeAfterSel4_getElem_ne ss vs (show treePtrId ≠ "usr_s_4" by decide)]
+    unfold treeMaskedCalldataWord
+    rw [treeAfterNode5Store_toState]
+  unfold treeRootWord
+  rw [hchain]
+  exact masked_keccak_node_chain_value_odd _ pkSeed _ _ _ tree height pathIdx
+    hOdd hadrs hpk hsize
+
 end NiceTry.Fors.Bridge
