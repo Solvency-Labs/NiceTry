@@ -16,6 +16,51 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
 
+## Sprint log (2026-06-12) — M1 + M2 DONE: ready for the A4 induction (M3)
+
+- **M1 (`TreeValue.lean` completed + `TreeIter.lean`):**
+  - **Iteration-0 fix**: the first iteration *extends* memory (loop entry has
+    `size = 0x3a0`); generalized the extract calculus to boundary-tolerant
+    forms (`byteArray_write_overwrite'` under `destAddr ≤ size`,
+    `mstore_{memory_size,extract_below,extract_self}'`) and re-keyed all
+    discharges on the weak size hypotheses — valid for all 25 iterations.
+  - **All six per-level value discharges** (leaf, nodes 1–4, root) as thin
+    wrappers over generic chain-value lemmas
+    (`masked_keccak_{leaf,node}_chain_value{,_even,_odd}`).
+  - **`TreeIter.lean`**: chain memory facts under the selector disjunction,
+    `IterFacts` invariant (control vars/calldata view/pkSeed slot/size) with
+    leaf base + node steps, level-exit transparency (laddered one-layer Ok
+    algebra — **gotcha**: deep whnf of the nested state defs causes
+    unification blowup; the ladder style checks in ~1.5s where naive defeq
+    hit 8M-heartbeat timeouts), existential per-level step lemmas, and
+    **`tree_iter_values`** — all six hash values of one iteration, chained
+    and entry-keyed.
+- **M2 (`TreeArith.lean`):** UInt256 bit-op `toNat` semantics; `shl_land_32`
+  (bit extraction); the five selector parity cases; the six ADRS-word
+  identities (`Nat.two_pow_add_eq_or_of_lt` + omega); and
+  **`tree_iter_values_of_invariant`** — the six values directly from the
+  invariant values (`t < 25`, `x = usr_dCursor`, `idx = x % 32`,
+  `usr_t`/`tLeafBase`/`ret`/`ret_2` lookups).
+- **M3 (next, the A4 induction) — all inputs now exist:**
+  1. Invariant def: `usr_t = t`, `usr_treePtr = sigOff+0x20+96t`,
+     `usr_rootPtr = 0x40+32t`, `usr_tLeafBase = 32t`,
+     `usr_dCursor.toNat = dVal >>> 5t`, `ret = 32`, `ret_2 = 96`,
+     pkSeed extract @0x380, `0x3a0 ≤ size`, roots `j < t` written
+     (`mem[0x40+32j]` extracts), calldata view fixed.
+  2. Step: `loop_step` + `exec_tree_body_iter` (hbody) + `exec_tree_post`
+     (hpost) + `eval_tree_cond` (hcond) + `treeIterState_ok`;
+     values via `tree_iter_values_of_invariant` (idx = indexAt dVal t glue:
+     `x % 32` with `x = dVal >>> 5t` — omega/`Nat.shiftRight_eq_div_pow`);
+     invariant restoration via the `IterFacts` lemmas + `treePostState`'s
+     insert chain (`state_getElem_insert_{self,ne}`) +
+     `treeAfterNode5_memory`/`root_store_memory_facts` (root slot written,
+     `rootPtr+32 ≤ 0x360` from `t < 25`).
+  3. Exit at `t = 25` via `loop_exit`; collect roots ⇒
+     `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`.
+  4. Remaining non-loop glue for `h_accept`: sibling reads ↔
+     `(sig.openings t).auth` and sk ↔ model (calldata layer), the pre-loop
+     trace, and the post-loop roots/address keccaks.
+
 ## Sprint log (2026-06-11b) — value layer: extract calculus + leaf & node-1 values
 
 - **`Bridge/TreeMemory.lean` — the extract-based scratch-window calculus.** No
