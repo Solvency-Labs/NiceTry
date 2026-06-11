@@ -16,6 +16,44 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
 
+## Sprint log (2026-06-11b) — value layer: extract calculus + leaf & node-1 values
+
+- **`Bridge/TreeMemory.lean` — the extract-based scratch-window calculus.** No
+  chain re-factoring (collapse/commute) needed anywhere:
+  `mstore_extract_{self,disjoint}` + `mstore_memory_size` chase per-slot
+  contents through any store sequence; `scratch_{leaf,node}_read_of_extracts`
+  rebuild the keccak input; `{leaf,node}_derivation_of_extracts` +
+  `node_derivation_climbLevel_{even,odd}_of_extracts` are the extract-based
+  twins of the `AddressShape` chain lemmas. `uint256_ofNat_toNat_of_lt` made
+  public for the value files.
+- **`Bridge/TreeValue.lean` — the per-hash discharges, both templates worked:**
+  - `tree_leaf_node_value_of_extract`: leaf value from the **extract-based
+    invariant** (pkSeed bytes at `[0x380,0x3a0)` of the *entry* memory +
+    `0x400 ≤ size` — this is what A4 maintains; nothing in the body writes
+    `0x380`, so `mstore_extract_disjoint` preserves it).
+  - `tree_node1_value_of_extract_{even,odd}`: the level-1 node value =
+    `climbLevel` with node = entry `usr_node`, sibling = masked read at
+    `usr_treePtr+16`, keyed on the selector value `usr_s ∈ {0,32}`
+    (`xor_3c0/3e0_{zero,32}`) — the full swap case split, worked end to end.
+  - Lookup-resolution kit (`state_setMachineState_getElem`,
+    `treeAfterSel0_getElem_{self,ne}`, per-state `_getElem`/`_toState` rfl
+    transfers) — the pattern for resolving any loop-body lookup.
+- **Remaining for `h_accept`:**
+  1. Levels 2–5 value discharges — parameter copies of the node-1 template
+     (selector var `usr_s_k`, ADRS params, sibling offset `+ret/+48/+64/+80`,
+     node var; level 5 stores to `usr_rootPtr` — also needs a rootPtr-write
+     extract lemma for the roots buffer at `0x40+32t`).
+  2. Chain the six values through `treeIterState` (the hashes feed forward:
+     level k+1's `usr_node_k` lookup = level k's value — via the read-back
+     lemmas) ⇒ per-iteration `hleaf/hnode1..5/hroot`.
+  3. A4 `loop_step` induction (exec side is DONE: `exec_tree_body_iter`,
+     `exec_tree_post`, `eval_tree_cond`, `treeIterState_ok`): invariant =
+     extract facts (pkSeed@0x380, roots prefix at 0x40) + var values
+     (`usr_t=k`, pointers, `dCursor=dVal>>5k`, `ret=32`, `ret_2=96`) + the
+     ADRS/selector arithmetic (`hadrs`/`hsel`/parity per level).
+  4. Feed `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`
+     → `address_derivation_eq_overwrite` → `h_accept`.
+
 ## Sprint log (2026-06-11) — A3 exec DONE: the full loop body runs symbolically
 
 - **`Bridge/TreeNode.lean`** (on top of the A2 template; generic fuel, generic
