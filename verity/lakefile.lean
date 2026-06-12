@@ -57,6 +57,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.TreeValue,
     `NiceTry.Fors.Bridge.TreeIter,
     `NiceTry.Fors.Bridge.TreeArith,
+    `NiceTry.Fors.Bridge.TreeLoop,
     `NiceTry.Fors.Bridge.Refinement,
     `NiceTry.Fors.Bridge.EvmRunRecover
   ]

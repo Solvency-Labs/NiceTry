@@ -644,10 +644,18 @@ structure IterFacts (e s : EvmYul.Yul.State) : Prop where
   ret2 : s[ret2Id]! = e[ret2Id]!
   usrT : s[usrTId]! = e[usrTId]!
   treePtr : s[treePtrId]! = e[treePtrId]!
+  tLeafBase : s[tLeafBaseId]! = e[tLeafBaseId]!
   rootPtr : s[rootPtrId]! = e[rootPtrId]!
-  pkSlot : s.toMachineState.memory.data.extract 0x380 0x3a0
-    = e.toMachineState.memory.data.extract 0x380 0x3a0
+  low : ∀ lo hi : Nat, hi ≤ 0x3a0 →
+    s.toMachineState.memory.data.extract lo hi
+      = e.toMachineState.memory.data.extract lo hi
   size : 0x3e0 ≤ s.toMachineState.memory.size
+
+/-- The pkSeed slot is inside the preserved low region. -/
+theorem IterFacts.pkSlot {e s : EvmYul.Yul.State} (hf : IterFacts e s) :
+    s.toMachineState.memory.data.extract 0x380 0x3a0
+      = e.toMachineState.memory.data.extract 0x380 0x3a0 :=
+  hf.low _ _ (by omega)
 
 /-- The leaf prefix establishes the invariant (entry memory only needs to reach
     the scratch base, as at loop entry). -/
@@ -660,10 +668,11 @@ theorem iterFacts_leaf (ss : SharedState .Yul) (vs : VarStore)
   ret2 := treeAfterLeafHash_getElem_ne' ss vs (by decide)
   usrT := treeAfterLeafHash_getElem_ne' ss vs (by decide)
   treePtr := treeAfterLeafHash_getElem_ne' ss vs (by decide)
+  tLeafBase := treeAfterLeafHash_getElem_ne' ss vs (by decide)
   rootPtr := treeAfterLeafHash_getElem_ne' ss vs (by decide)
-  pkSlot := by
+  low := fun lo hi hhi => by
     rw [treeAfterLeafHash_memory, treeAfterLeafSk_toMachineState]
-    exact (leaf_chain_memory_facts _ _ _ hsize).1 _ _ (by omega)
+    exact (leaf_chain_memory_facts _ _ _ hsize).1 lo hi hhi
   size := by
     rw [treeAfterLeafHash_memory, treeAfterLeafSk_toMachineState,
       (leaf_chain_memory_facts _ _ _ hsize).2]
@@ -683,11 +692,12 @@ theorem iterFacts_node1 (e : EvmYul.Yul.State) (a : SharedState .Yul)
   ret2 := (treeAfterNode1_getElem_ne a b (by decide) (by decide)).trans hf.ret2
   usrT := (treeAfterNode1_getElem_ne a b (by decide) (by decide)).trans hf.usrT
   treePtr := (treeAfterNode1_getElem_ne a b (by decide) (by decide)).trans hf.treePtr
+  tLeafBase := (treeAfterNode1_getElem_ne a b (by decide) (by decide)).trans hf.tLeafBase
   rootPtr := (treeAfterNode1_getElem_ne a b (by decide) (by decide)).trans hf.rootPtr
-  pkSlot := by
+  low := fun lo hi hhi => by
     rw [treeAfterNode1_memory, treeAfterSibling1_chain]
-    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 _ _
-      (by omega)).trans hf.pkSlot
+    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 lo hi hhi).trans
+      (hf.low lo hi hhi)
   size := by
     rw [treeAfterNode1_memory, treeAfterSibling1_chain,
       (node_chain_memory_facts _ _ _ _ _ hsel hf.size).2]
@@ -707,11 +717,12 @@ theorem iterFacts_node2 (e : EvmYul.Yul.State) (a : SharedState .Yul)
   ret2 := (treeAfterNode2_getElem_ne a b (by decide) (by decide)).trans hf.ret2
   usrT := (treeAfterNode2_getElem_ne a b (by decide) (by decide)).trans hf.usrT
   treePtr := (treeAfterNode2_getElem_ne a b (by decide) (by decide)).trans hf.treePtr
+  tLeafBase := (treeAfterNode2_getElem_ne a b (by decide) (by decide)).trans hf.tLeafBase
   rootPtr := (treeAfterNode2_getElem_ne a b (by decide) (by decide)).trans hf.rootPtr
-  pkSlot := by
+  low := fun lo hi hhi => by
     rw [treeAfterNode2_memory, treeAfterSibling2_chain]
-    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 _ _
-      (by omega)).trans hf.pkSlot
+    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 lo hi hhi).trans
+      (hf.low lo hi hhi)
   size := by
     rw [treeAfterNode2_memory, treeAfterSibling2_chain,
       (node_chain_memory_facts _ _ _ _ _ hsel hf.size).2]
@@ -731,11 +742,12 @@ theorem iterFacts_node3 (e : EvmYul.Yul.State) (a : SharedState .Yul)
   ret2 := (treeAfterNode3_getElem_ne a b (by decide) (by decide)).trans hf.ret2
   usrT := (treeAfterNode3_getElem_ne a b (by decide) (by decide)).trans hf.usrT
   treePtr := (treeAfterNode3_getElem_ne a b (by decide) (by decide)).trans hf.treePtr
+  tLeafBase := (treeAfterNode3_getElem_ne a b (by decide) (by decide)).trans hf.tLeafBase
   rootPtr := (treeAfterNode3_getElem_ne a b (by decide) (by decide)).trans hf.rootPtr
-  pkSlot := by
+  low := fun lo hi hhi => by
     rw [treeAfterNode3_memory, treeAfterSibling3_chain]
-    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 _ _
-      (by omega)).trans hf.pkSlot
+    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 lo hi hhi).trans
+      (hf.low lo hi hhi)
   size := by
     rw [treeAfterNode3_memory, treeAfterSibling3_chain,
       (node_chain_memory_facts _ _ _ _ _ hsel hf.size).2]
@@ -755,11 +767,12 @@ theorem iterFacts_node4 (e : EvmYul.Yul.State) (a : SharedState .Yul)
   ret2 := (treeAfterNode4_getElem_ne a b (by decide) (by decide)).trans hf.ret2
   usrT := (treeAfterNode4_getElem_ne a b (by decide) (by decide)).trans hf.usrT
   treePtr := (treeAfterNode4_getElem_ne a b (by decide) (by decide)).trans hf.treePtr
+  tLeafBase := (treeAfterNode4_getElem_ne a b (by decide) (by decide)).trans hf.tLeafBase
   rootPtr := (treeAfterNode4_getElem_ne a b (by decide) (by decide)).trans hf.rootPtr
-  pkSlot := by
+  low := fun lo hi hhi => by
     rw [treeAfterNode4_memory, treeAfterSibling4_chain]
-    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 _ _
-      (by omega)).trans hf.pkSlot
+    exact ((node_chain_memory_facts _ _ _ _ _ hsel hf.size).1 lo hi hhi).trans
+      (hf.low lo hi hhi)
   size := by
     rw [treeAfterNode4_memory, treeAfterSibling4_chain,
       (node_chain_memory_facts _ _ _ _ _ hsel hf.size).2]
