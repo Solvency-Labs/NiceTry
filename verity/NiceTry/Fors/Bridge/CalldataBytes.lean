@@ -57,12 +57,12 @@ theorem word32_uInt256_roundtrip_toNat (n : Nat) (h : n < UInt256.size) :
   exact uint256_ofNat_toNat_of_lt n h
 
 theorem word32_extract_16_32_size (n : Nat) :
-    ((word32 n).extract 16 32).size = 16 := by
+    ((word32 n).extract 0 16).size = 16 := by
   simp [word32, ByteArray.size_extract, uint256_toByteArray_size (UInt256.ofNat n)]
 
 /-- One 16-byte raw-signature chunk as it appears in ABI calldata. -/
 def forsPayloadChunk (raw : RawSig) (i : Nat) : ByteArray :=
-  ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 16 32
+  ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 0 16
 
 theorem forsPayloadChunk_size (raw : RawSig) (i : Nat) :
     (forsPayloadChunk raw i).size = 16 := by
@@ -74,7 +74,7 @@ theorem forsSelector_size : forsSelector.size = 4 := by
 private theorem forsPayload_fold_size (raw : RawSig) (xs : List Nat) (acc : ByteArray) :
     (xs.foldl
         (fun acc i =>
-          acc ++ ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 16 32)
+          acc ++ ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 0 16)
         acc).size = acc.size + 16 * xs.length := by
   induction xs generalizing acc with
   | nil =>
@@ -83,7 +83,7 @@ private theorem forsPayload_fold_size (raw : RawSig) (xs : List Nat) (acc : Byte
       simp only [List.foldl_cons, List.length_cons]
       rw [ih]
       rw [ByteArray.size_append]
-      rw [show (((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 16 32).size = 16 by
+      rw [show (((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 0 16).size = 16 by
         simpa [word32] using word32_extract_16_32_size (raw.read16 (16 * i))]
       omega
 

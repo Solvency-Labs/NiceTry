@@ -48,10 +48,13 @@ def word32 (n : Nat) : ByteArray := (UInt256.ofNat n).toByteArray
 def forsSelector : ByteArray := ⟨#[0x1a, 0xad, 0x75, 0xc5]⟩
 
 /-- The 2448-byte signature payload, reconstructed from `read16` at each 16-byte
-    chunk (153 chunks × 16 = 2448). -/
+    chunk (153 chunks × 16 = 2448). Per the `RawSig` convention each `read16`
+    value is the 16-byte chunk *as the top half of a masked EVM word*, so the
+    chunk bytes are the TOP half `[0, 16)` of its 32-byte encoding (the low
+    half is zero). -/
 def forsPayload (raw : RawSig) : ByteArray :=
   (List.range 153).foldl
-    (fun acc i => acc ++ ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 16 32)
+    (fun acc i => acc ++ ((UInt256.ofNat (raw.read16 (16 * i))).toByteArray).extract 0 16)
     ByteArray.empty
 
 /-- ABI calldata for `recover(bytes sig, bytes32 digest)`:
