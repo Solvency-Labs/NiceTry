@@ -277,4 +277,103 @@ theorem calldataload_encode_payload_pair (raw : RawSig) (digest : Digest)
   rw [hcd]
   exact encodeForsCalldata_uInt256_payload_pair raw digest k hk
 
+
+/-! ## Masked calldata reads recover packed raw-signature values -/
+
+/-- Clearing the low 128 bits of `2^128 * a ||| r` (with `a, r < 2^128`)
+    leaves `2^128 * a`. -/
+private theorem nat_and_high128 (a r : Nat) (ha : a < 2 ^ 128) (hr : r < 2 ^ 128) :
+    (2 ^ 128 * a + r) &&& (2 ^ 256 - 2 ^ 128) = 2 ^ 128 * a := by
+  have hmask : (2 : Nat) ^ 256 - 2 ^ 128 = (2 ^ 128 - 1) <<< 128 := by
+    rw [Nat.shiftLeft_eq]
+    norm_num
+  have hsh : 2 ^ 128 * a = a <<< 128 := by
+    rw [Nat.shiftLeft_eq]
+    ring
+  rw [Nat.two_pow_add_eq_or_of_lt hr a, hmask, hsh]
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [Nat.testBit_and, Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftLeft,
+    Nat.testBit_two_pow_sub_one]
+  by_cases h : 128 ≤ i
+  · have hrbit : r.testBit i = false :=
+      Nat.testBit_lt_two_pow (lt_of_lt_of_le hr (Nat.pow_le_pow_right (by norm_num) h))
+    by_cases h2 : i - 128 < 128
+    · simp [h, h2, hrbit]
+    · have habit : a.testBit (i - 128) = false :=
+        Nat.testBit_lt_two_pow
+          (lt_of_lt_of_le ha (Nat.pow_le_pow_right (by norm_num) (by omega)))
+      simp [h, h2, hrbit, habit]
+  · simp [h]
+
+private theorem high_low_lt (q r : Nat) (hq : q < 2 ^ 128) (hr : r < 2 ^ 128) :
+    q * 2 ^ 128 + r < 2 ^ 256 := by
+  have h2 : (q + 1) * 2 ^ 128 ≤ 2 ^ 128 * 2 ^ 128 := mul_le_mul_right' hq (2 ^ 128)
+  have h3 : (2 : Nat) ^ 128 * 2 ^ 128 = 2 ^ 256 := by rw [← pow_add]
+  have h4 : (q + 1) * 2 ^ 128 = q * 2 ^ 128 + 2 ^ 128 := by ring
+  omega
+
+/-- A masked `calldataload` at ABI offset `100 + 16k` recovers the packed
+    raw-signature value `raw.read16 (16 * k)`, provided that value is
+    well-formed: packed (low 128 bits zero) and word-sized. -/
+theorem masked_calldataload_read16 (raw : RawSig) (digest : Digest)
+    (s : EvmYul.State .Yul) (k : Nat) (hk : k + 2 ≤ 153)
+    (hcd : s.executionEnv.calldata = encodeForsCalldata raw digest)
+    (hlow : raw.read16 (16 * k) % 2 ^ 128 = 0)
+    (hlt : raw.read16 (16 * k) < 2 ^ 256) :
+    ((EvmYul.State.calldataload s (UInt256.ofNat (100 + 16 * k))).land
+        (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = raw.read16 (16 * k) := by
+  have husz : UInt256.size = 2 ^ 256 := by decide
+  rw [calldataload_encode_payload_pair raw digest s k hk hcd, uint256_land_toNat]
+  have hmask : ((UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = 2 ^ 256 - 2 ^ 128 := by
+    rw [show (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+        = UInt256.ofNat
+            0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
+      from rfl]
+    rw [uint256_ofNat_toNat_of_lt _ (by rw [husz]; norm_num)]
+    norm_num
+  have hq : raw.read16 (16 * k) / 2 ^ 128 < 2 ^ 128 :=
+    Nat.div_lt_of_lt_mul (by
+      have h3 : (2 : Nat) ^ 128 * 2 ^ 128 = 2 ^ 256 := by rw [← pow_add]
+      omega)
+  have hchk : fromByteArrayBigEndian (forsPayloadChunk raw k)
+      = raw.read16 (16 * k) / 2 ^ 128 := by
+    rw [show forsPayloadChunk raw k
+        = (UInt256.ofNat (raw.read16 (16 * k))).toByteArray.extract 0 16 from rfl]
+    rw [(toByteArray_halves (UInt256.ofNat (raw.read16 (16 * k)))).1]
+    rw [uint256_ofNat_toNat_of_lt _ (by rw [husz]; exact hlt)]
+  have hszk1 : (forsPayloadChunk raw (k + 1)).size = 16 :=
+    forsPayloadChunk_size raw (k + 1)
+  have hr : fromByteArrayBigEndian (forsPayloadChunk raw (k + 1)) < 2 ^ 128 := by
+    have h := fromBE_lt (forsPayloadChunk raw (k + 1))
+    rw [hszk1] at h
+    norm_num at h
+    exact h
+  have hcat : fromByteArrayBigEndian
+        (forsPayloadChunk raw k ++ forsPayloadChunk raw (k + 1))
+      = raw.read16 (16 * k) / 2 ^ 128 * 2 ^ 128
+        + fromByteArrayBigEndian (forsPayloadChunk raw (k + 1)) := by
+    rw [fromBE_append, hszk1, hchk]
+  rw [uInt256OfByteArray_toNat _ (by
+    rw [hcat]
+    exact high_low_lt _ _ hq hr)]
+  rw [hcat, hmask,
+    show raw.read16 (16 * k) / 2 ^ 128 * 2 ^ 128
+      = 2 ^ 128 * (raw.read16 (16 * k) / 2 ^ 128) from by ring,
+    nat_and_high128 _ _ hq hr,
+    Nat.mul_div_cancel' (Nat.dvd_of_mod_eq_zero hlow)]
+
+/-- The loop's masked sibling/sk read, phrased via `treeMaskedCalldataWord`. -/
+theorem treeMaskedCalldataWord_read16 (raw : RawSig) (digest : Digest)
+    (s : EvmYul.Yul.State) (k : Nat) (hk : k + 2 ≤ 153)
+    (hcd : s.toState.executionEnv.calldata = encodeForsCalldata raw digest)
+    (hlow : raw.read16 (16 * k) % 2 ^ 128 = 0)
+    (hlt : raw.read16 (16 * k) < 2 ^ 256) :
+    (treeMaskedCalldataWord s (UInt256.ofNat (100 + 16 * k))).toNat
+      = raw.read16 (16 * k) := by
+  unfold treeMaskedCalldataWord
+  exact masked_calldataload_read16 raw digest s.toState k hk hcd hlow hlt
+
 end NiceTry.Fors.Bridge
