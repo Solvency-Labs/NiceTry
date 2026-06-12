@@ -496,4 +496,190 @@ theorem tree_iter_body_facts
     exact c5
 
 
+
+/-! ## One iteration: body + post, with the invariant restored -/
+
+/-- One full iteration (body + post block): the invariant advances to `t+1`,
+    everything below the just-written root slot is preserved, and the slot
+    holds the closed-form root. -/
+theorem tree_iter_step_full
+    (T : EvmYul.State .Yul) (pk : UInt256) (dVal ptr0 t : Nat)
+    (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (ht : t < 25)
+    (inv : LoopInv T pk dVal ptr0 t (.Ok ss vs)) :
+    ∃ (a₂ : SharedState .Yul) (b₂ : EvmYul.Yul.VarStore) (rootW : UInt256),
+      treeIterState (.Ok ss vs) = .Ok a₂ b₂
+      ∧ LoopInv T pk dVal ptr0 (t + 1) (treePostState (.Ok a₂ b₂))
+      ∧ (∀ lo hi, hi ≤ 0x40 + 32 * t →
+          (treePostState (.Ok a₂ b₂)).toMachineState.memory.data.extract lo hi
+            = (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract lo hi)
+      ∧ (treePostState (.Ok a₂ b₂)).toMachineState.memory.data.extract
+          (0x40 + 32 * t) (0x40 + 32 * t + 32) = rootW.toByteArray.data
+      ∧ rootW.toNat = loopRootV pk T dVal ptr0 t := by
+  obtain ⟨a₂, b₂, rootW, hIter, hT', hu, hp, hr, hb, hd, hrt, hr2, hsz, hlow,
+    hpks, hslot, hval⟩ := tree_iter_body_facts T pk dVal ptr0 t ss vs ht inv
+  refine ⟨a₂, b₂, rootW, hIter, ?_, ?_, ?_, hval⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, inv.ptrB⟩
+    · rw [treePostState_toState]
+      exact hT'
+    · rw [treePostState_usrT, hu, uint256_ofNat_add t 1 (by
+        have h26 : (26 : Nat) < UInt256.size := by decide
+        omega)]
+    · rw [treePostState_treePtr, hp, hr2,
+        uint256_ofNat_add _ _ (by have := inv.ptrB; omega),
+        show ptr0 + 96 * t + 96 = ptr0 + 96 * (t + 1) from by omega]
+    · rw [treePostState_rootPtr, hr, hrt,
+        uint256_ofNat_add _ _ (by
+          have h864 : (900 : Nat) < UInt256.size := by decide
+          omega),
+        show 0x40 + 32 * t + 32 = 0x40 + 32 * (t + 1) from by omega]
+    · rw [treePostState_tLeafBase, hb, hrt,
+        uint256_ofNat_add _ _ (by
+          have h832 : (900 : Nat) < UInt256.size := by decide
+          omega),
+        show 32 * t + 32 = 32 * (t + 1) from by omega]
+    · rw [treePostState_dCursor]
+      exact shiftRight_cursor _ dVal t hd
+    · rw [treePostState_other a₂ b₂ (by decide) (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hrt
+    · rw [treePostState_other a₂ b₂ (by decide) (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hr2
+    · rw [treePostState_toMachineState]
+      exact hpks
+    · rw [treePostState_toMachineState]
+      omega
+  · intro lo hi hhi
+    rw [treePostState_toMachineState]
+    exact hlow lo hi hhi
+  · rw [treePostState_toMachineState]
+    exact hslot
+
+/-! ## The 25-iteration loop run -/
+
+set_option linter.unusedSimpArgs false in
+/-- **The tree loop, run to completion.** From the invariant at `t` (with
+    `t + k = 25`), the `for` statement executes to an `.Ok` state satisfying
+    the invariant at 25, preserving memory below the slot region written so
+    far, with every remaining root slot `j ∈ [t, 25)` holding its closed-form
+    chain value. -/
+theorem tree_loop_run (T : EvmYul.State .Yul) (pk : UInt256) (dVal ptr0 : Nat)
+    (co : Option YulContract) :
+    ∀ (k t : Nat), t + k = 25 →
+    ∀ (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore),
+      LoopInv T pk dVal ptr0 t (.Ok ss vs) →
+    ∀ n : Nat,
+      ∃ (ssf : SharedState .Yul) (vsf : EvmYul.Yul.VarStore)
+        (rootsW : Nat → UInt256),
+        exec (n + 3 * k + 46) (.For forsTreeCond forsTreePost forsTreeBody) co
+            (.Ok ss vs)
+          = .ok (.Ok ssf vsf)
+        ∧ LoopInv T pk dVal ptr0 25 (.Ok ssf vsf)
+        ∧ (∀ lo hi, hi ≤ 0x40 + 32 * t →
+            (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract lo hi
+              = (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract lo hi)
+        ∧ (∀ j, t ≤ j → j < 25 →
+            (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract
+              (0x40 + 32 * j) (0x40 + 32 * j + 32) = (rootsW j).toByteArray.data
+            ∧ (rootsW j).toNat = loopRootV pk T dVal ptr0 j) := by
+  intro k
+  induction k with
+  | zero =>
+    intro t hk ss vs inv n
+    have ht : t = 25 := by omega
+    subst ht
+    refine ⟨ss, vs, fun _ => UInt256.ofNat 0, ?_, inv,
+      fun lo hi _ => rfl, fun j hj hj' => absurd hj' (by omega)⟩
+    have hcond : eval (n + 43) forsTreeCond co (👌 (EvmYul.Yul.State.Ok ss vs))
+        = .ok (.Ok ss vs, (⟨0⟩ : UInt256)) := by
+      rw [mkOk_ok]
+      have h := eval_tree_cond (n := n + 37) (co := co) (s := .Ok ss vs)
+      rw [inv.usrT, uint256_lt_self_25] at h
+      exact h
+    have hres := loop_exit (n := n + 43) (post := forsTreePost)
+      (body := forsTreeBody) hcond
+    rw [overwrite?_ok] at hres
+    rw [show n + 3 * 0 + 46 = (n + 45) + 1 from by omega,
+      exec_for (n := n + 45),
+      show n + 45 = (n + 43) + 2 from by omega]
+    exact hres
+  | succ k ih =>
+    intro t hk ss vs inv n
+    have ht : t < 25 := by omega
+    obtain ⟨a₂, b₂, rootW, hIter, inv', hlow, hslot, hval⟩ :=
+      tree_iter_step_full T pk dVal ptr0 t ss vs ht inv
+    rw [treePostState_ok] at inv' hlow hslot
+    obtain ⟨ssf, vsf, rootsW', hexec, hinvf, hlowf, hrootsf⟩ :=
+      ih (t + 1) (by omega) a₂ _ inv' n
+    refine ⟨ssf, vsf, (fun j => if j = t then rootW else rootsW' j), ?_, hinvf,
+      ?_, ?_⟩
+    · have hcond : eval (n + 3 * k + 46) forsTreeCond co
+          (👌 (EvmYul.Yul.State.Ok ss vs))
+          = .ok (.Ok ss vs, UInt256.ofNat 1) := by
+        rw [mkOk_ok]
+        have h := eval_tree_cond (n := n + 3 * k + 40) (co := co) (s := .Ok ss vs)
+        rw [inv.usrT, uint256_lt_true t 25 ht (by decide)] at h
+        exact h
+      have hbody : exec (n + 3 * k + 46) (.Block forsTreeBody) co (.Ok ss vs)
+          = .ok (.Ok a₂ b₂) := by
+        rw [show n + 3 * k + 46 = (n + 3 * k + 3) + 43 from by omega,
+          exec_tree_body_iter (n + 3 * k + 3) co ss vs, hIter]
+      have hpost : exec (n + 3 * k + 46) (.Block forsTreePost) co
+          (🧟 (EvmYul.Yul.State.Ok a₂ b₂))
+          = .ok (treePostState (.Ok a₂ b₂)) := by
+        rw [reviveJump_ok,
+          show n + 3 * k + 46 = (n + 3 * k + 35) + 11 from by omega]
+        exact exec_tree_post (n + 3 * k + 35) co (.Ok a₂ b₂)
+      have hfor : exec (n + 3 * k + 46)
+          (.For forsTreeCond forsTreePost forsTreeBody) co
+          ((treePostState (.Ok a₂ b₂)) ✏️⟦EvmYul.Yul.State.Ok ss vs⟧?)
+          = .ok (.Ok ssf vsf) := by
+        rw [overwrite?_ok, treePostState_ok]
+        exact hexec
+      have hres := loop_step (n := n + 3 * k + 46) (co := co)
+        (s := .Ok ss vs) hcond uint256_one_ne_zero hbody hpost hfor
+      rw [overwrite?_ok] at hres
+      rw [show n + 3 * (k + 1) + 46 = ((n + 3 * k + 46) + 2) + 1 from by omega,
+        exec_for (n := (n + 3 * k + 46) + 2)]
+      exact hres
+    · intro lo hi hhi
+      rw [hlowf lo hi (by omega)]
+      exact hlow lo hi hhi
+    · intro j hj hj'
+      by_cases hjt : j = t
+      · subst hjt
+        simp only [if_pos rfl]
+        refine ⟨?_, hval⟩
+        rw [hlowf _ _ (by omega)]
+        exact hslot
+      · simp only [if_neg hjt]
+        exact hrootsf j (by omega) hj'
+
+
+/-- **The loop from `t = 0`** — the entry point the pre-loop trace instantiates:
+    all 25 root slots get their closed-form chain values. -/
+theorem tree_loop_run_from_zero (T : EvmYul.State .Yul) (pk : UInt256)
+    (dVal ptr0 : Nat) (co : Option YulContract)
+    (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (inv : LoopInv T pk dVal ptr0 0 (.Ok ss vs)) (n : Nat) :
+    ∃ (ssf : SharedState .Yul) (vsf : EvmYul.Yul.VarStore)
+      (rootsW : Nat → UInt256),
+      exec (n + 121) (.For forsTreeCond forsTreePost forsTreeBody) co (.Ok ss vs)
+        = .ok (.Ok ssf vsf)
+      ∧ LoopInv T pk dVal ptr0 25 (.Ok ssf vsf)
+      ∧ (∀ lo hi, hi ≤ 0x40 →
+          (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract lo hi
+            = (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.data.extract lo hi)
+      ∧ (∀ j, j < 25 →
+          (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract
+            (0x40 + 32 * j) (0x40 + 32 * j + 32) = (rootsW j).toByteArray.data
+          ∧ (rootsW j).toNat = loopRootV pk T dVal ptr0 j) := by
+  obtain ⟨ssf, vsf, rootsW, hexec, hinv, hlow, hroots⟩ :=
+    tree_loop_run T pk dVal ptr0 co 25 0 rfl ss vs inv n
+  refine ⟨ssf, vsf, rootsW, ?_, hinv, fun lo hi hhi => hlow lo hi (by omega),
+    fun j hj => hroots j (by omega) hj⟩
+  rw [show n + 121 = n + 3 * 25 + 46 from by omega]
+  exact hexec
+
 end NiceTry.Fors.Bridge
