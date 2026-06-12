@@ -16,6 +16,46 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
 
+## Sprint log (2026-06-12b) — M3 DONE: the tree loop is PROVED
+
+- **`Bridge/TreeLoop.lean` — the A4 induction, closed end to end:**
+  - Loop plumbing (`mkOk`/`reviveJump`/`overwrite?` are identity on `.Ok`;
+    `UInt256` `lt`/`add`/`shiftRight` value lemmas; cursor bits = `indexAt`).
+  - `treePostState` fully resolved (Ok exposures + per-variable lookups).
+  - `LoopInv` (the loop invariant: control vars, `dCursor = dVal >>> 5t`,
+    pkSeed slot extract, `0x3a0 ≤ size`, pointer bound) + closed-form
+    per-tree values (`loopSk`/`loopSib`/`loopRootV` — the 5-level climb over
+    the masked calldata reads at `ptr0 + 96j + {0,16,32,48,64,80}`).
+  - `tree_iter_body_facts` (the mega-lemma): one body iteration from the
+    invariant — exit `.Ok`, vars/calldata view kept, memory to `0x400`,
+    below-slot + pkSeed preservation, the closed-form root written.
+  - `tree_iter_step_full`: + the post block → `LoopInv (t+1)`.
+  - **`tree_loop_run` / `tree_loop_run_from_zero`**: the 25-iteration
+    `loop_step` induction (fuel `n + 3k + 46`; from zero: `n + 121`),
+    exiting via `loop_exit` at `t = 25` — final `.Ok` state with
+    `LoopInv 25`, memory below `0x40` untouched, and **all 25 root slots
+    populated with `loopRootV` chain values**.
+  - Axiom audit: the four documented axioms only
+    (`evm_keccak_{leaf,node}`, `ffi_kec_lt`, `ffi_zeroes_eq_empty`,
+    `uint256_toByteArray_size`). No sorry.
+- **M4 (next) — `h_accept` assembly:**
+  1. **Pre-loop trace** (statements 0–31 of `fun_recover`, generic fuel):
+     establishes `LoopInv … 0` — incl. `mstore(0x380, pkSeed)` giving the
+     pkSeed extract (memory ends at exactly `0x3a0` there — the calculus
+     already covers it), the hmsg keccak + forced-zero skip, and the loop
+     var inits (`ptr0 = var_sig_offset + 0x20`, `dVal = hmsg word`).
+  2. **Calldata glue**: `loopSk/loopSib T ptr0 j` ↔ `(sig.openings j).sk/auth`
+     (CalldataBytes `read16` machinery) and `idx = indexAt dVal j` per tree ⇒
+     instantiate `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`
+     with the `rootsW` family from `tree_loop_run_from_zero` (its `hleaf/...`
+     hypotheses are exactly `loopRootV`'s layers — split `loopRootV` into the
+     seven families pointwise).
+  3. **Post-loop trace**: `mstore(0x20, shl(130,1))`, the roots keccak
+     `keccak256(0, 0x360)` (consumes the populated buffer + pk@0 from the
+     hmsg phase — NOTE: needs `pkSeed@0x00` preserved through the loop ✓
+     `tree_loop_run`'s below-`0x40` preservation), the address keccak, and
+     `return(0, 0x20)` through `evmRunRecover`.
+
 ## Sprint log (2026-06-12) — M1 + M2 DONE: ready for the A4 induction (M3)
 
 - **M1 (`TreeValue.lean` completed + `TreeIter.lean`):**
