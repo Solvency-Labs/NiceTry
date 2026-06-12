@@ -376,4 +376,42 @@ theorem treeMaskedCalldataWord_read16 (raw : RawSig) (digest : Digest)
   unfold treeMaskedCalldataWord
   exact masked_calldataload_read16 raw digest s.toState k hk hcd hlow hlt
 
+
+/-! ## Well-formed raw signatures and the loop's closed-form reads -/
+
+/-- Domain restriction for `ForsRefines`: every 16-byte field of the raw
+    signature is a packed top-half word (`v = (v / 2^128) * 2^128 < 2^256`),
+    matching the `read16` convention and the ABI encoder. -/
+def RawSigWellFormed (raw : RawSig) : Prop :=
+  ∀ k : Nat, k ≤ 152 →
+    raw.read16 (16 * k) % 2 ^ 128 = 0 ∧ raw.read16 (16 * k) < 2 ^ 256
+
+/-- The loop's masked sk read for tree `j` (at `ptr0 = 132`) is the
+    raw-signature field at `treeOffset j = 32 + 96 j`. -/
+theorem loopSk_read16 (raw : RawSig) (digest : Digest)
+    (T : EvmYul.State .Yul) (j : Nat) (hj : j < 25)
+    (hcd : T.executionEnv.calldata = encodeForsCalldata raw digest)
+    (hwf : RawSigWellFormed raw) :
+    (loopSk T 132 j).toNat = raw.read16 (32 + 96 * j) := by
+  obtain ⟨hlow, hlt⟩ := hwf (2 + 6 * j) (by omega)
+  unfold loopSk
+  rw [show (132 + 96 * j : Nat) = 100 + 16 * (2 + 6 * j) from by ring,
+    show (32 + 96 * j : Nat) = 16 * (2 + 6 * j) from by ring]
+  exact masked_calldataload_read16 raw digest T (2 + 6 * j) (by omega) hcd hlow hlt
+
+/-- The loop's masked auth-sibling read for tree `j` at byte offset `16 ℓ`
+    (at `ptr0 = 132`) is the raw-signature field at
+    `authOffset j (ℓ - 1) = 32 + 96 j + 16 ℓ`. -/
+theorem loopSib_read16 (raw : RawSig) (digest : Digest)
+    (T : EvmYul.State .Yul) (j ℓ : Nat) (hj : j < 25) (hℓ : 1 ≤ ℓ ∧ ℓ ≤ 5)
+    (hcd : T.executionEnv.calldata = encodeForsCalldata raw digest)
+    (hwf : RawSigWellFormed raw) :
+    (loopSib T 132 j (16 * ℓ)).toNat = raw.read16 (32 + 96 * j + 16 * ℓ) := by
+  obtain ⟨hlow, hlt⟩ := hwf (2 + 6 * j + ℓ) (by omega)
+  unfold loopSib
+  rw [show (132 + 96 * j + 16 * ℓ : Nat) = 100 + 16 * (2 + 6 * j + ℓ) from by ring,
+    show (32 + 96 * j + 16 * ℓ : Nat) = 16 * (2 + 6 * j + ℓ) from by ring]
+  exact masked_calldataload_read16 raw digest T (2 + 6 * j + ℓ) (by omega) hcd
+    hlow hlt
+
 end NiceTry.Fors.Bridge
