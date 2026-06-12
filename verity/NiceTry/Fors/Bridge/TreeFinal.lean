@@ -215,4 +215,190 @@ theorem exec_return_stmt {n co} {s : EvmYul.Yul.State} {a : UInt256}
     List.singleton_append]
   exact execPrimCall_err (h := primCall_return (n := n+4) s a s[x]!)
 
+
+/-! ## The post-loop trace: roots compression, address, return -/
+
+set_option maxHeartbeats 4000000 in
+/-- **The post-loop suffix** (`fun_recover` statements 33–36): from the loop
+    exit (`ret = 0x20`, `pkSeed` at `0x00`, the 25 root slots populated), the
+    block halts via `RETURN` with `H_return` decoding to
+    `addressFromRoot pkSeed (compressRoots pkSeed roots)`. -/
+theorem post_loop_trace (n : Nat) (co : Option YulContract)
+    (sf : SharedState .Yul) (vf : EvmYul.Yul.VarStore)
+    (pk : UInt256) (rootsW : Nat → UInt256)
+    (hret : (EvmYul.Yul.State.Ok sf vf)[retId]! = UInt256.ofNat 32)
+    (hpk0 : (EvmYul.Yul.State.Ok sf vf).toMachineState.memory.data.extract 0 32 = pk.toByteArray.data)
+    (hslots : ∀ j, j < 25 →
+      (EvmYul.Yul.State.Ok sf vf).toMachineState.memory.data.extract (0x40 + 32 * j) (0x40 + 32 * j + 32)
+        = (rootsW j).toByteArray.data)
+    (hsize : 0x400 ≤ (EvmYul.Yul.State.Ok sf vf).toMachineState.memory.size) :
+    ∃ S : EvmYul.Yul.State,
+      exec (n + 18) (.Block (forsFunRecover.body.drop 33)) co (.Ok sf vf)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return
+        = addressFromRoot pk.toNat
+            (compressRoots pk.toNat (fun i : TreeIndex => (rootsW i.val).toNat)) := by
+  have h32 : (UInt256.ofNat 32).toNat = 32 := uint256_ofNat_toNat_of_lt _ (by decide)
+  have h0 : (UInt256.ofNat 0).toNat = 0 := uint256_ofNat_toNat_of_lt _ (by decide)
+  have h864 : (UInt256.ofNat 864).toNat = 864 := uint256_ofNat_toNat_of_lt _ (by decide)
+  have h64 : (UInt256.ofNat 64).toNat = 64 := uint256_ofNat_toNat_of_lt _ (by decide)
+  have hret' := hret
+  rw [show retId = "ret" from rfl] at hret'
+  -- statement 33: mstore(ret, shl(130, 1))
+  have e33 : exec (n + 17)
+      (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Var "ret", .Call (Sum.inl .SHL)
+          [.Lit (UInt256.ofNat 130), .Lit (UInt256.ofNat 1)]])) co (.Ok sf vf)
+      = .ok (.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf) := by
+    have h := exec_mstore_expr (n := n + 11) (co := co) (s := .Ok sf vf)
+      (he₁ := eval_var (n := n + 12) (id := "ret"))
+      (he₂ := eval_shl130 (n := n + 9))
+    rw [hret'] at h
+    exact h
+  -- statement 34: mstore(ret, and(keccak256(0, 864), not(0xff…ff)))
+  have hv34 : eval (n + 12) (.Var "ret") co
+      ((EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).setMachineState
+        ((EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).toMachineState.keccak256
+          (UInt256.ofNat 0) (UInt256.ofNat 864)).2)
+      = .ok (((EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).setMachineState
+          ((EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).toMachineState.keccak256
+            (UInt256.ofNat 0) (UInt256.ofNat 864)).2), UInt256.ofNat 32) := by
+    have h := eval_var (n := n + 11) (co := co) (id := "ret")
+      (s := (EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).setMachineState
+        ((EvmYul.Yul.State.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf).toMachineState.keccak256
+          (UInt256.ofNat 0) (UInt256.ofNat 864)).2)
+    rw [ok_set_getElem, state_getElem_shared_irrel { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } sf vf, hret'] at h
+    exact h
+  have e34 : exec (n + 16)
+      (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Var "ret", .Call (Sum.inl .AND)
+          [.Call (Sum.inl .KECCAK256) [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 864)],
+           .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 0xffffffffffffffffffffffffffffffff)]]])) co (.Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf)
+      = .ok (.Ok { sf with toMachineState := (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)) } vf) := by
+    have h := exec_mstore_thread (n := n + 10) (co := co) (s := .Ok { sf with toMachineState := (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) } vf)
+      (he₂ := eval_masked_keccak (n := n + 4) (UInt256.ofNat 0) (UInt256.ofNat 864)
+        (UInt256.ofNat 0xffffffffffffffffffffffffffffffff))
+      (he₁ := hv34)
+    exact h
+  -- statement 35: mstore(0, and(keccak256(0, 64), sub(shl(160, 1), 1)))
+  have e35 : exec (n + 15)
+      (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+        [.Lit (UInt256.ofNat 0), .Call (Sum.inl .AND)
+          [.Call (Sum.inl .KECCAK256) [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 64)],
+           .Call (Sum.inl .SUB)
+             [.Call (Sum.inl .SHL) [.Lit (UInt256.ofNat 160), .Lit (UInt256.ofNat 1)],
+              .Lit (UInt256.ofNat 1)]]])) co (.Ok { sf with toMachineState := (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)) } vf)
+      = .ok (.Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))) } vf) := by
+    have h := exec_mstore_thread (n := n + 9) (co := co) (s := .Ok { sf with toMachineState := (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)) } vf)
+      (he₂ := eval_masked160_keccak (n := n + 1) (UInt256.ofNat 0) (UInt256.ofNat 64))
+      (he₁ := eval_lit (n := n + 10) (val := UInt256.ofNat 0))
+    exact h
+  -- statement 36: return(0, ret) halts
+  have e36 : exec (n + 14)
+      (.ExprStmtCall (.Call (Sum.inl .RETURN) [.Lit (UInt256.ofNat 0), .Var "ret"]))
+      co (.Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))) } vf)
+      = .error (.YulHalt (.Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32) } vf) ⟨1⟩) := by
+    have h := exec_return_stmt (n := n + 8) (co := co) (s := .Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))) } vf)
+      (a := UInt256.ofNat 0) (x := "ret")
+    rw [state_getElem_shared_irrel { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))) } sf vf, hret'] at h
+    exact h
+  -- assemble the block
+  refine ⟨.Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32) } vf, ?_, ?_⟩
+  · show exec (n + 18)
+      (.Block ((.ExprStmtCall (.Call (Sum.inl .MSTORE)
+          [.Var "ret", .Call (Sum.inl .SHL)
+            [.Lit (UInt256.ofNat 130), .Lit (UInt256.ofNat 1)]]))
+        :: (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+          [.Var "ret", .Call (Sum.inl .AND)
+            [.Call (Sum.inl .KECCAK256) [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 864)],
+             .Call (Sum.inl .NOT) [.Lit (UInt256.ofNat 0xffffffffffffffffffffffffffffffff)]]]))
+        :: (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+          [.Lit (UInt256.ofNat 0), .Call (Sum.inl .AND)
+            [.Call (Sum.inl .KECCAK256) [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 64)],
+             .Call (Sum.inl .SUB)
+               [.Call (Sum.inl .SHL) [.Lit (UInt256.ofNat 160), .Lit (UInt256.ofNat 1)],
+                .Lit (UInt256.ofNat 1)]]]))
+        :: (.ExprStmtCall (.Call (Sum.inl .RETURN)
+            [.Lit (UInt256.ofNat 0), .Var "ret"]))
+        :: [])) co (.Ok sf vf)
+      = .error (.YulHalt (.Ok { sf with toMachineState := (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32) } vf) ⟨1⟩)
+    rw [exec_block_cons_ok (h := e33), exec_block_cons_ok (h := e34),
+      exec_block_cons_ok (h := e35)]
+    exact exec_block_cons_err (h := e36)
+  · -- the value: H_return decodes to the address
+    have hM0 : (EvmYul.Yul.State.Ok sf vf).toMachineState = sf.toMachineState := rfl
+    rw [hM0] at hpk0 hslots hsize
+    -- sizes along the way
+    have hsz1 : (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).memory.size = sf.toMachineState.memory.size :=
+      mstore_memory_size sf.toMachineState (UInt256.ofNat 32)
+        (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130)) (by rw [h32]; omega)
+    have hK1m : ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.memory = (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).memory := keccak256_memory _ _ _
+    have hsz2 : (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).memory.size = ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.memory.size :=
+      by
+        have hb2 : (UInt256.ofNat 32).toNat + 32 ≤ ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.memory.size := by
+          rw [h32, hK1m, hsz1]
+          omega
+        exact mstore_memory_size ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2 (UInt256.ofNat 32)
+          ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot) hb2
+    have hK2m : ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.memory = (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).memory := keccak256_memory _ _ _
+    have hsz3 : (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).memory.size = ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.memory.size :=
+      by
+        have hb3 : (UInt256.ofNat 0).toNat + 32 ≤ ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.memory.size := by
+          rw [h0, hK2m, hsz2, hK1m, hsz1]
+          omega
+        exact mstore_memory_size ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2 (UInt256.ofNat 0)
+          ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1))) hb3
+    -- (a) the roots word is compressRoots
+    have hroots : ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+        = compressRoots pk.toNat (fun i : TreeIndex => (rootsW i.val).toNat) := by
+      have hmask := masked_keccak_toNat (sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))) (UInt256.ofNat 0) (UInt256.ofNat 864)
+      rw [h0, h864] at hmask
+      rw [hmask]
+      have hd := roots_derivation_eq_from_buffer sf.toMachineState
+        (UInt256.ofNat 32) pk (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))
+        (fun i : TreeIndex => rootsW i.val)
+        (by rw [h32]; rfl) shl130_value
+        (by unfold RootsHashLen K; omega)
+        hpk0
+        (roots_buffer_concat sf.toMachineState rootsW hslots (by omega))
+      show fromByteArrayBigEndian
+          (ffi.KEC ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).memory.readWithPadding 0 864)) &&& NMaskWord = _
+      rw [show (864 : Nat) = RootsHashLen from by unfold RootsHashLen K; omega]
+      exact hd
+    -- (b) the address word
+    have haddr : ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1))).toNat
+        = addressFromRoot pk.toNat ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat := by
+      have hmask := masked160_keccak_toNat (((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)) (UInt256.ofNat 0) (UInt256.ofNat 64)
+      rw [h0, h64] at hmask
+      rw [hmask]
+      have hpkK1 : ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.memory.data.extract 0 32 = pk.toByteArray.data := by
+        rw [hK1m, mstore_extract_below' _ _ _ _ _ (by rw [h32]; omega) (by rw [h32])]
+        exact hpk0
+      have hd := address_derivation_eq_overwrite ((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2
+        (UInt256.ofNat 32) pk ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)
+        (by rw [h32]) (by rw [hK1m, hsz1]; omega) hpkK1
+      exact hd
+    -- (c) H_return = the address word's bytes
+    show fromByteArrayBigEndian
+        ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32)).H_return = _
+    have hHr : ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32)).H_return
+        = (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).memory.readWithPadding 0 32 := by
+      show (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).memory.readWithPadding (UInt256.ofNat 0).toNat
+          (UInt256.ofNat 32).toNat = _
+      rw [h0, h32]
+    have hslot0 : (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).memory.data.extract 0 32 = ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1))).toByteArray.data := by
+      have h := mstore_extract_self' ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2 (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))
+        (by rw [h0]; omega)
+      rw [h0] at h
+      exact h
+    have hread : (((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).memory.readWithPadding 0 32 = ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1))).toByteArray := by
+      apply ByteArray.ext
+      rw [readWithPadding_prefix _ 32
+          (by rw [hsz3, hK2m, hsz2, hK1m, hsz1]; omega)
+          (by rw [hsz3, hK2m, hsz2, hK1m, hsz1]; omega) (by decide),
+        ByteArray.data_extract]
+      exact hslot0
+    rw [hHr, hread, fromBE_toByteArray, haddr, hroots]
+
+
 end NiceTry.Fors.Bridge
