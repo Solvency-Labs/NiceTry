@@ -62,6 +62,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.TreeCalldata,
     `NiceTry.Fors.Bridge.TreePreLoop,
     `NiceTry.Fors.Bridge.TreeEntry,
+    `NiceTry.Fors.Bridge.TreeEntryFront,
     `NiceTry.Fors.Bridge.Refinement,
     `NiceTry.Fors.Bridge.EvmRunRecover
   ]

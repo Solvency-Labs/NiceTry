@@ -44,15 +44,16 @@ values). Gap-B is still explicit trust, localized as labeled `evm_keccak_*`
 axioms in `AddressShape.lean` (`address`, `hmsg`, `leaf`, `node`, `roots`).
 These axioms bundle keccak correctness plus byte/value transcript encoding and
 masking until the planned Gap-B split replaces the encoding parts with proof.
-The FORS tree-climb loop still has to prove that the 25 abstract roots written
-into the roots buffer are exactly the model roots. The post-loop handoff is now
+The FORS tree-climb loop now proves that the 25 roots written into the roots
+buffer are exactly the model chain values. The post-loop handoff is
 named: establish `pkSeed` at `0x00` and the 25-root buffer at `0x40..0x35f`, then
 `roots_derivation_eq_from_buffer` connects the real `compressRoots` call to the
 model. The helper `roots_derivation_eq_after_loop_buffer_init` composes the
 abstract root-buffer initialization, the memory-size preservation facts, and the
-final `mstore(0x20, ADRS_roots); keccak256(0,0x360)` call; the remaining hard
-work is proving that the root values supplied to that helper are produced by the
-real FORS tree-climb loop. The sharper target is
+final `mstore(0x20, ADRS_roots); keccak256(0,0x360)` call. `TreeLoop.lean`,
+`TreeCalldata.lean`, and `TreeEntryFront.lean` now supply the real loop values and
+complete pre-loop entry invariant; the remaining work is the raw-header/model glue
+and composition with the loop and post-loop trace. The sharper target is
 `roots_derivation_eq_recoverRoot_after_loop_buffer_init`: prove the pointwise
 premise `(roots t).toNat = reconstructTree ...` for each tree, and the bridge
 rewrites the final roots compression all the way to `recoverRoot`.

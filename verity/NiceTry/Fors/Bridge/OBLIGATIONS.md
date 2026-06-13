@@ -4,9 +4,14 @@
 > gotcha, build instructions, what's already proved, and the remaining work split
 > into claimable workstreams. This file is the detailed obligation/discharge plan.
 
-Status snapshot (cloned `fors-verity-model`, this session):
+Status snapshot (`agent/tree-loop-A2`, 2026-06-13):
 
 - **Structural Lean proofs: fully closed.** `grep -rn 'sorry\|admit' NiceTry/Fors` → 0 hits.
+- **Hand-written runtime loop: fully closed.** The real 25-iteration
+  `fun_recover` tree loop, per-tree calldata/model values, and all 25 root-buffer
+  writes are proved in `Tree*.lean`.
+- **Pre-loop trace: fully closed.** `TreeEntryFront.lean` executes the hmsg front
+  half, proves its transcript value, and composes through `LoopInv 0`.
 - **Open work: 12 `local_obligations`**, all `proofStatus := .assumed`, all at the
   Verity→Yul boundary. A Verity `LocalObligation` is `{name, obligation: String,
   proofStatus}` (`Compiler/CompilationModel/Types.lean:338`) — an **accounting flag,
@@ -62,11 +67,11 @@ The bridging axioms to state explicitly (and keep auditable): EVMYulLean
 `keccak256(off,len)` over a region equal to `encode(fields)` = the model's
 `keccakWord/Hash16/Address fields`. In the current Bridge these are the labeled
 `evm_keccak_*` axioms in `AddressShape.lean`; all byte-region facts feeding them
-are mechanical memory reasoning. The roots bridge currently covers the 27-word
-compression input for abstract root values; the loop proof that computes those
-values remains Class-C work. The current handoff target is
-`roots_derivation_eq_after_loop_buffer_init`: the loop must supply the 25 root
-values, after which the bridge proves the local memory layout, size preservation,
+are mechanical memory reasoning. The roots bridge covers the 27-word compression
+input, and `TreeLoop.lean` now proves that the real loop computes and writes the
+required 25 root values. The current assembly target is
+`roots_derivation_eq_after_loop_buffer_init`: composing those values with the
+bridge proves the local memory layout, size preservation,
 final roots ADRS overwrite, and `compressRoots` equivalence. The follow-on helper
 `roots_derivation_eq_recoverRoot_after_loop_buffer_init` states the exact
 pointwise loop obligation needed to rewrite that result to the typed model's
