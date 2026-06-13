@@ -1,6 +1,6 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
-## Current checkpoint (2026-06-13) — complete pre-loop trace reaches `LoopInv 0`
+## Current checkpoint (2026-06-13) — parallel Phase 4 branches integrated
 
 - **Tree loop:** complete. `TreeLoop.lean` proves all 25 iterations and root-buffer writes.
 - **Calldata Parts A-C:** complete. `TreeCalldata.lean` has general payload extraction,
@@ -20,19 +20,29 @@
   keccak. `recoverHmsgDVal_toNat` identifies the resulting word with model `hMsg` over
   the five stored words. `exec_recover_preloop_to_loopInv` composes front + back and lands
   at `body.drop 32` with `LoopInv 0`.
-- **Exact stopping point:** connect the named header words
-  (`recoverHmsgPkWord`, `recoverHmsgRWord`, `recoverHmsgCounterWord`, and the digest word)
-  to `decodeTyped raw`/`dValOf`, then derive the theorem's `hfz` premise from
-  `forcedZero (dValOf raw digest) = true`. The counter is the final 16-byte payload chunk,
-  so it uses the dedicated padded-counter calldata lemma rather than the general paired
-  payload lemma. Also resolve the model boundary for arbitrary `Digest = Nat`:
-  `UInt256.ofNat digest` is equal to `digest` only below `2^256`; either carry that ABI
-  representability hypothesis or normalize `dValOf` to the bytes32 word.
-- **After that glue:** compose `exec_recover_preloop_to_loopInv` +
-  `tree_loop_run_from_zero` + `post_loop_trace` through `call`/`runForsRecover` into
-  `h_accept`; connect `loopRootV` to `recoverRoot` through
-  `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`; then finish
-  `h_len`/`h_guard`, remove `dispatcher_routes_to_recover`, and flip the 12 obligations.
+- **Accept branch (`Phase4Accept.lean`):** header/counter/digest calldata glue is proved,
+  including the padded final counter chunk; model forced-zero is converted to the exact
+  UInt256 guard; `loopRootV` is connected to `reconstructTree`; and
+  `exec_accept_loop_roots_from_hmsg_prefix` composes the hmsg prefix, `LoopInv 0`, all 25
+  loop iterations, and `compressRoots = recoverRoot`. It stops at `body.drop 33`.
+- **Reject branches (`Phase4Reject.lean`):** the bad-length word guard/body is proved;
+  the forced-zero rejecting branch is proved from the named post-hmsg state through
+  `YulHalt` with zero return data; zero-result plumbing and dispatcher lift wrappers are
+  proved. The outer direct-entry `call` compositions are still open.
+- **Exact remaining execution work:**
+  1. Strengthen/carry the accept result with the below-`0x40` preservation and final
+     memory-size facts needed by `post_loop_trace`, then compose `body.drop 33` through
+     `call`/`runForsRecover`/`evmRunRecover`.
+  2. Compose the actual `fun_recover` entry prefix with the bad-length state and with
+     the post-hmsg forced-zero theorem, yielding complete `evmRunRecover = 0` facts.
+  3. Lift the three completed scoped facts through `evmRun_eq_recover_of_sigLen` /
+     `dispatcher_routes_to_recover` and apply `forsRefines_of_branches`.
+- **Model-domain blocker:** the strongest checked accept glue requires both
+  `RawSigWellFormed raw` and `DigestFitsEvmWord digest`. `ForsRefines` currently assumes
+  only `RawSigLenFitsEvmWord raw`. This is a real statement mismatch: arbitrary
+  `RawSig.read16 : Nat` values and `Digest = Nat` can exceed their ABI field widths and
+  are truncated by the EVM encoder. Normalize the model inputs to ABI words or strengthen
+  the refinement domain before claiming the universal theorem.
 - **GOTCHA (GetElem on string literals):** `state[("foo":Identifier)]!` FAILS GetElem
   synthesis (`GetElem? Yul.State String ?m ?m`). Use a `def fooId : Identifier := "foo"`
   index (like `retId`) OR phrase via `EvmYul.Yul.State.lookup! "foo" s` (a plain arg).
@@ -630,10 +640,12 @@ Everything reduces to: **connect the interpreter actually running
 decomposition (`EvmRun.lean` lines 64-87, `Equivalence.lean` lines 55-96). Four
 independently-claimable workstreams:
 
-### WS-1 · Class-A / reject paths
-The ABI byte library and good-length dispatcher trace are proved. Remaining:
-assemble the bad-length and forced-zero executions into `h_len` and `h_guard`,
-then connect them through the dispatcher boundary.
+### WS-1 · Class-A / reject paths — branch internals proved, outer composition open
+The ABI byte library and good-length dispatcher trace are proved.
+`Phase4Reject.lean` now proves the bad-length guard/body and the forced-zero
+`mstore(0,0); return(0,0x20)` branch, plus the `evmRun` lift wrappers. Remaining:
+compose each branch from the actual `call`/`fun_recover` entry to obtain the two
+`evmRunRecover = 0` hypotheses consumed by those wrappers.
 - **Foundation in place:**
   - `Bridge/Interp.lean` — one-step `exec` reductions (Block/If/Leave/Break/Continue/
     out-of-fuel) + `eval` base cases (Lit/Var/evalArgs-nil). Recipe:
@@ -669,18 +681,19 @@ then connect them through the dispatcher boundary.
     calldata layout, dispatcher words, masked header/payload reads, and model-opening
     values. Do not rebuild this layer.
 
-### WS-2 · M4 execution assembly  — **current frontier**
-`TreePreLoop.lean` proves the memory calculus and hmsg-window value theorem, but
-not yet the execution of statements 18–31. Prove that trace to establish
-`LoopInv 0`, run `tree_loop_run_from_zero`, then compose with `TreeFinal.lean`
-to close `h_accept`.
+### WS-2 · M4 execution assembly — accept prefix + loop complete, suffix open
+`TreeEntryFront.lean` executes statements 18–31 and establishes `LoopInv 0`.
+`Phase4Accept.lean` connects the encoded fields to the model and runs all 25
+iterations, proving the compressed roots equal `recoverRoot`. Remaining: retain
+the loop preservation/size facts required by `post_loop_trace`, run statements
+33–36, and expose the result through `call`/`runForsRecover`/`evmRunRecover`.
 
 ### WS-3 · The FORS tree loop  — ✅ **DONE**
 `TreeLeaf.lean` through `TreeLoop.lean` prove the real loop end to end: execution
 of all six hashes per iteration, the invariant and arithmetic, 25-step induction,
-and all root-buffer writes. `TreeCalldata.lean` supplies the model-opening values.
-Do not reimplement the induction. The remaining work is M4 composition around it:
-the pre-loop statement trace and final `h_accept` assembly.
+and all root-buffer writes. `TreeCalldata.lean` supplies the model-opening values,
+and `Phase4Accept.lean` now connects those values to `recoverRoot`. Do not
+reimplement the induction.
 
 ### WS-4 · Assemble `RefinesModel evmRun`  — ✅ **DONE** (`Bridge/Refinement.lean`)
 `forsRefines_of_branches` reduces `ForsRefines` to exactly three interpreter-run
@@ -688,9 +701,9 @@ obligations — `h_len` (bad length → `address(0)`), `h_guard` (forced-zero re
 `address(0)`), `h_accept` (otherwise `= addressFromRoot pkSeed (recoverRoot …)`).
 All model-side glue (the `recoverRaw?` case-split + `none ↔ address(0)`) is proved;
 adds **zero trust** (`#print axioms` = `propext/Classical.choice/Quot.sound`).
-`h_len`/`h_guard` ⇐ WS-1; `h_accept` ⇐ WS-2 + WS-3 via the AddressShape handoffs.
-Remaining glue: adapt to the `Option` `RefinesModel` form for
-`refinement_discharges_oracle` → SoLean oracle.
+The reduction theorem is complete, but none of its three execution hypotheses is
+yet exported end to end. In addition, its current universal domain must be aligned
+with the ABI-representability requirements exposed by `Phase4Accept.lean`.
 
 ### Finishing step (after WS-1..4)
 Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
@@ -700,11 +713,12 @@ Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
 ---
 
 ## 4. Suggested grab order
-- **First:** finish the pre-loop statement trace (`fun_recover.body[18:32]`).
-- **Second:** compose the proved pre-loop, loop, calldata, and post-loop results into
-  `h_accept`.
-- **Then:** close `h_len`/`h_guard`, remove the dispatcher-routing axiom, and flip
-  the 12 accounting obligations.
+- **First:** settle the refinement domain (`RawSigWellFormed` and bytes32 digest
+  normalization/bounds), because it determines the final theorem signatures.
+- **Second:** finish the short accept suffix and direct-call composition.
+- **Third:** compose the two reject paths from the direct recover entry.
+- **Then:** instantiate `forsRefines_of_branches`, remove
+  `dispatcher_routes_to_recover`, and flip the 12 accounting obligations.
 
 ## 5. Build status of this branch
 - **`lake build NiceTry` — verified green (2026-06-13):** 1164 modules built,
