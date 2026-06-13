@@ -131,4 +131,225 @@ theorem hmsg_window_after_5 (m : MachineState) (w0 w1 w2 w3 w4 : UInt256)
     exact h
   exact ⟨e0, e1, e2, e3, e4, hszF⟩
 
+/-! ## Back-half trace: forced-zero skip + loop-var inits (body[25:32]) -/
+
+private def dValReadId : Identifier := "usr_dVal"
+
+
+/-- The loop-entry state: the post-keccak state after `mstore(0x380, usr_pkSeed)`
+    and the five loop-variable bindings. -/
+def loopEntryState (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (pk dv : UInt256) : EvmYul.Yul.State :=
+  ((((((EvmYul.Yul.State.Ok ss vs).setMachineState
+      ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x380) pk)).insert
+      "usr_t" (UInt256.ofNat 0)).insert
+      "usr_treePtr" ((UInt256.ofNat 100).add (UInt256.ofNat 0x20))).insert
+      "usr_rootPtr" (UInt256.ofNat 0x40)).insert
+      "usr_tLeafBase" (UInt256.ofNat 0)).insert
+      "usr_dCursor" dv
+
+private theorem o380_toNat : (UInt256.ofNat 0x380).toNat = 0x380 :=
+  uint256_ofNat_toNat_of_lt _ (by decide)
+
+/-- `loopEntryState` normalized to a single `Ok` with nested var-store inserts. -/
+theorem loopEntryState_ok (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (pk dv : UInt256) :
+    loopEntryState ss vs pk dv
+      = .Ok { ss with toMachineState :=
+                (EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x380) pk }
+          (((((vs.insert "usr_t" (UInt256.ofNat 0)).insert
+              "usr_treePtr" ((UInt256.ofNat 100).add (UInt256.ofNat 0x20))).insert
+              "usr_rootPtr" (UInt256.ofNat 0x40)).insert
+              "usr_tLeafBase" (UInt256.ofNat 0)).insert
+              "usr_dCursor" dv) := rfl
+
+/-- `loopEntryState`'s machine state is the pre-keccak machine state with
+    `pkSeed` parked at `0x380`. -/
+theorem loopEntry_toMachineState (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (pk dv : UInt256) :
+    (loopEntryState ss vs pk dv).toMachineState
+      = (EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x380) pk := rfl
+
+/-- Reading a variable distinct from the five loop variables from `loopEntryState`
+    sees the post-keccak base binding. -/
+theorem loopEntry_base_read (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore)
+    (pk dv : UInt256) (y : Identifier)
+    (h1 : y ≠ "usr_t") (h2 : y ≠ "usr_treePtr") (h3 : y ≠ "usr_rootPtr")
+    (h4 : y ≠ "usr_tLeafBase") (h5 : y ≠ "usr_dCursor") :
+    (loopEntryState ss vs pk dv)[y]! = (EvmYul.Yul.State.Ok ss vs)[y]! := by
+  rw [loopEntryState_ok,
+    state_getElem_finsert_ne _ _ _ h5, state_getElem_finsert_ne _ _ _ h4,
+    state_getElem_finsert_ne _ _ _ h3, state_getElem_finsert_ne _ _ _ h2,
+    state_getElem_finsert_ne _ _ _ h1]
+  exact state_getElem_shared_irrel _ ss vs y
+
+/-- **Back-half pre-loop trace.** From the post-keccak state (`usr_dVal` bound),
+    skip the forced-zero guard, run `mstore(0x380, usr_pkSeed)` and the five
+    loop-variable initializations, landing at the `for`-loop with `LoopInv 0`. -/
+theorem exec_recover_tail_to_loopInv
+    (ss : SharedState .Yul) (vs : EvmYul.Yul.VarStore) (co : Option YulContract)
+    (pk dv : UInt256) (n : Nat)
+    (hret : (EvmYul.Yul.State.Ok ss vs)[retId]! = UInt256.ofNat 0x20)
+    (hret2 : (EvmYul.Yul.State.Ok ss vs)[ret2Id]! = UInt256.ofNat 96)
+    (hoff : EvmYul.Yul.State.lookup! "var_sig_offset" (.Ok ss vs) = UInt256.ofNat 100)
+    (hdv : EvmYul.Yul.State.lookup! "usr_dVal" (.Ok ss vs) = dv)
+    (hpk : EvmYul.Yul.State.lookup! "usr_pkSeed" (.Ok ss vs) = pk)
+    (hmemsz : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size = 0xa0)
+    (hfz : (UInt256.shiftRight dv (UInt256.ofNat 125)).land (UInt256.ofNat 31)
+      = (⟨0⟩ : UInt256)) :
+    exec (n + 30) (.Block (forsFunRecover.body.drop 25)) co (.Ok ss vs)
+      = exec (n + 23) (.Block (forsFunRecover.body.drop 32)) co
+          (loopEntryState ss vs pk dv)
+    ∧ LoopInv (loopEntryState ss vs pk dv).toState pk dv.toNat 132 0
+        (loopEntryState ss vs pk dv) := by
+  -- forced-zero guard evaluates to 0
+  have hguard : eval (n + 28)
+      (.Call (Sum.inl .AND)
+        [.Call (Sum.inl .SHR) [.Lit (UInt256.ofNat 125), .Var "usr_dVal"],
+         .Lit (UInt256.ofNat 31)]) co (.Ok ss vs)
+      = .ok (.Ok ss vs, (⟨0⟩ : UInt256)) := by
+    have hshr : eval (n + 24)
+        (.Call (Sum.inl .SHR) [.Lit (UInt256.ofNat 125), .Var "usr_dVal"]) co (.Ok ss vs)
+        = .ok (.Ok ss vs, UInt256.shiftRight dv (UInt256.ofNat 125)) := by
+      have h := eval_tree_shr_lit_var (n := n + 18) (co := co) (s := .Ok ss vs)
+        (b := UInt256.ofNat 125) (x := "usr_dVal")
+      rw [state_getElem!_eq_lookup!, hdv] at h
+      exact h
+    have h := eval_binop2 (n := n + 22) (co := co) (s := .Ok ss vs) (OP := .AND)
+      (f := UInt256.land)
+      (hprim := primCall_and (n := n + 26) (s := .Ok ss vs)
+        (UInt256.shiftRight dv (UInt256.ofNat 125)) (UInt256.ofNat 31))
+      (he₁ := hshr) (he₂ := eval_lit (n := n + 25))
+    rw [hfz] at h
+    exact h
+  have hexec : exec (n + 30) (.Block (forsFunRecover.body.drop 25)) co (.Ok ss vs)
+      = exec (n + 23) (.Block (forsFunRecover.body.drop 32)) co
+          (loopEntryState ss vs pk dv) := by
+    rw [show forsFunRecover.body.drop 25
+        = (.If (.Call (Sum.inl .AND)
+              [.Call (Sum.inl .SHR) [.Lit (UInt256.ofNat 125), .Var "usr_dVal"],
+               .Lit (UInt256.ofNat 31)])
+             [.ExprStmtCall (.Call (Sum.inl .MSTORE)
+                [.Lit (UInt256.ofNat 0), .Lit (UInt256.ofNat 0)]),
+              .ExprStmtCall (.Call (Sum.inl .RETURN)
+                [.Lit (UInt256.ofNat 0), .Var "ret"])])
+          :: forsFunRecover.body.drop 26 from rfl]
+    rw [exec_block_cons_ok (n := n + 29) (h := exec_if_false (n := n + 28) hguard)]
+    rw [show forsFunRecover.body.drop 26
+        = (.ExprStmtCall (.Call (Sum.inl .MSTORE)
+            [.Lit (UInt256.ofNat 0x380), .Var "usr_pkSeed"]))
+          :: forsFunRecover.body.drop 27 from rfl]
+    rw [exec_block_cons_ok (n := n + 28)
+      (h := exec_mstore_lit (n := n + 22) (co := co) (s := .Ok ss vs)
+        (a := UInt256.ofNat 0x380) (v := pk) (e := .Var "usr_pkSeed")
+        (he := by rw [eval_var, state_getElem!_eq_lookup!, hpk]))]
+    rw [show forsFunRecover.body.drop 27
+        = (.Let ["usr_t"] (.some (.Lit (UInt256.ofNat 0))))
+          :: forsFunRecover.body.drop 28 from rfl]
+    rw [exec_block_cons_ok (n := n + 27) (h := exec_let_lit (n := n + 26))]
+    rw [show forsFunRecover.body.drop 28
+        = (.Let ["usr_treePtr"] (.some (.Call (Sum.inl .ADD)
+            [.Var "var_sig_offset", .Var "ret"])))
+          :: forsFunRecover.body.drop 29 from rfl]
+    rw [exec_block_cons_ok (n := n + 26)
+      (h := exec_let_binop (n := n + 20) (co := co)
+        (x := "usr_treePtr") (OP := .ADD)
+        (e₁ := .Var "var_sig_offset") (e₂ := .Var "ret")
+        (v₁ := UInt256.ofNat 100) (v₂ := UInt256.ofNat 0x20)
+        (out := (UInt256.ofNat 100).add (UInt256.ofNat 0x20))
+        (hprim := primCall_add (n := n + 24) (UInt256.ofNat 100) (UInt256.ofNat 0x20))
+        (he₁ := by
+          rw [eval_var, ok_set_insert_getElem,
+            state_getElem_finsert_ne _ _ _
+              (show ("var_sig_offset" : Identifier) ≠ ["usr_t"].head! by decide),
+            state_getElem!_eq_lookup!, hoff])
+        (he₂ := by
+          rw [eval_var, ok_set_insert_getElem,
+            state_getElem_finsert_ne _ _ _
+              (show ("ret" : Identifier) ≠ ["usr_t"].head! by decide),
+            show ("ret" : Identifier) = retId from rfl, hret]))]
+    rw [show forsFunRecover.body.drop 29
+        = (.Let ["usr_rootPtr"] (.some (.Lit (UInt256.ofNat 0x40))))
+          :: forsFunRecover.body.drop 30 from rfl]
+    rw [exec_block_cons_ok (n := n + 25) (h := exec_let_lit (n := n + 24))]
+    rw [show forsFunRecover.body.drop 30
+        = (.Let ["usr_tLeafBase"] (.some (.Lit (UInt256.ofNat 0))))
+          :: forsFunRecover.body.drop 31 from rfl]
+    rw [exec_block_cons_ok (n := n + 24) (h := exec_let_lit (n := n + 23))]
+    rw [show forsFunRecover.body.drop 31
+        = (.Let ["usr_dCursor"] (.some (.Var "usr_dVal")))
+          :: forsFunRecover.body.drop 32 from rfl]
+    rw [exec_block_cons_ok (n := n + 23) (h := exec_let_var (n := n + 22))]
+    congr 1
+    simp only [List.head!_cons]
+    unfold loopEntryState
+    congr 1
+    rw [show ("usr_dVal" : Identifier) = dValReadId from rfl]
+    show (EvmYul.Yul.State.Ok
+        { ss with toMachineState :=
+            (EvmYul.Yul.State.Ok ss vs).toMachineState.mstore (UInt256.ofNat 0x380) pk }
+        ((((vs.insert "usr_t" (UInt256.ofNat 0)).insert
+            "usr_treePtr" ((UInt256.ofNat 100).add (UInt256.ofNat 0x20))).insert
+            "usr_rootPtr" (UInt256.ofNat 0x40)).insert
+            "usr_tLeafBase" (UInt256.ofNat 0)))[dValReadId]! = dv
+    rw [state_getElem_finsert_ne _ _ _ (show dValReadId ≠ "usr_tLeafBase" by decide),
+      state_getElem_finsert_ne _ _ _ (show dValReadId ≠ "usr_rootPtr" by decide),
+      state_getElem_finsert_ne _ _ _ (show dValReadId ≠ "usr_treePtr" by decide),
+      state_getElem_finsert_ne _ _ _ (show dValReadId ≠ "usr_t" by decide),
+      state_getElem_shared_irrel _ ss vs dValReadId, state_getElem!_eq_lookup!,
+      show dValReadId = "usr_dVal" from rfl, hdv]
+  refine ⟨hexec, ?_⟩
+  have hA : (UInt256.ofNat 100).add (UInt256.ofNat 0x20) = UInt256.ofNat 132 :=
+    uint256_ofNat_add 100 0x20 (by decide)
+  have hpad : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size
+      ≤ (UInt256.ofNat 0x380).toNat := by rw [o380_toNat, hmemsz]; decide
+  have hsmall : (UInt256.ofNat 0x380).toNat < 2 ^ 32 := by rw [o380_toNat]; decide
+  exact {
+    toState := rfl
+    usrT := by
+      rw [loopEntryState_ok,
+        state_getElem_finsert_ne _ _ _ (show usrTId ≠ "usr_dCursor" by decide),
+        state_getElem_finsert_ne _ _ _ (show usrTId ≠ "usr_tLeafBase" by decide),
+        state_getElem_finsert_ne _ _ _ (show usrTId ≠ "usr_rootPtr" by decide),
+        state_getElem_finsert_ne _ _ _ (show usrTId ≠ "usr_treePtr" by decide),
+        show usrTId = "usr_t" from rfl]
+      exact state_getElem_finsert_self _ _ "usr_t" _
+    treePtr := by
+      rw [loopEntryState_ok,
+        state_getElem_finsert_ne _ _ _ (show treePtrId ≠ "usr_dCursor" by decide),
+        state_getElem_finsert_ne _ _ _ (show treePtrId ≠ "usr_tLeafBase" by decide),
+        state_getElem_finsert_ne _ _ _ (show treePtrId ≠ "usr_rootPtr" by decide),
+        show treePtrId = "usr_treePtr" from rfl, state_getElem_finsert_self _ _ "usr_treePtr" _,
+        hA]
+    rootPtr := by
+      rw [loopEntryState_ok,
+        state_getElem_finsert_ne _ _ _ (show rootPtrId ≠ "usr_dCursor" by decide),
+        state_getElem_finsert_ne _ _ _ (show rootPtrId ≠ "usr_tLeafBase" by decide),
+        show rootPtrId = "usr_rootPtr" from rfl, state_getElem_finsert_self _ _ "usr_rootPtr" _]
+    tLeafBase := by
+      rw [loopEntryState_ok,
+        state_getElem_finsert_ne _ _ _ (show tLeafBaseId ≠ "usr_dCursor" by decide),
+        show tLeafBaseId = "usr_tLeafBase" from rfl, state_getElem_finsert_self _ _ "usr_tLeafBase" _]
+    dCursor := by
+      rw [loopEntryState_ok, show dCursorId = "usr_dCursor" from rfl,
+        state_getElem_finsert_self _ _ "usr_dCursor" _, Nat.mul_zero, Nat.shiftRight_zero]
+    ret := by
+      rw [loopEntry_base_read _ _ _ _ retId (by decide) (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hret
+    ret2 := by
+      rw [loopEntry_base_read _ _ _ _ ret2Id (by decide) (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hret2
+    pkSlot := by
+      rw [loopEntry_toMachineState]
+      have h := mstore_pad_extract_self (EvmYul.Yul.State.Ok ss vs).toMachineState
+        (UInt256.ofNat 0x380) pk hpad hsmall
+      rw [o380_toNat, show 0x380 + 32 = 0x3a0 from rfl] at h
+      exact h
+    size := by
+      rw [loopEntry_toMachineState, mstore_pad_size _ _ _ hpad hsmall, o380_toNat]
+    ptrB := by decide
+  }
+
 end NiceTry.Fors.Bridge
