@@ -131,6 +131,48 @@ theorem hmsg_window_after_5 (m : MachineState) (w0 w1 w2 w3 w4 : UInt256)
     exact h
   exact ⟨e0, e1, e2, e3, e4, hszF⟩
 
+/-! ## Front-half statement helpers (body[18:24]) -/
+
+/-- `let x := keccak256(<lit>, <lit>)` — the `usr_dVal` hash (body[24]). -/
+theorem exec_let_keccak_lit_lit {n co} {s : EvmYul.Yul.State} {x : Identifier}
+    {off len : UInt256} :
+    exec (n+8) (.Let [x] (.some (.Call (Sum.inl .KECCAK256) [.Lit off, .Lit len]))) co s
+      = .ok ((s.setMachineState (s.toMachineState.keccak256 off len).2).insert x
+              (s.toMachineState.keccak256 off len).1) := by
+  rw [exec_let_prim (n := n+7)]
+  show execPrimCall (n+7) .KECCAK256 [x]
+      (reverse' (evalArgs (n+7) [.Lit len, .Lit off] co s)) = _
+  rw [evalArgs_cons_ok (n := n+6) (h := eval_lit (n := n+5)),
+    evalTail_cons_ok (n := n+5),
+    evalArgs_cons_ok (n := n+4) (h := eval_lit (n := n+3)),
+    evalTail_cons_ok (n := n+3), evalArgs_nil (n := n+2)]
+  simp only [cons', reverse', List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.singleton_append]
+  rw [execPrimCall_ok (h := primCall_keccak256 (n := n+6) s off len), multifill_single]
+
+/-- `let x := and(calldataload(add(var, lit)), not(mask))` — the masked `usr_pkSeed`
+    header read (body[18]). -/
+theorem exec_let_masked_addvlit {n co} {s : EvmYul.Yul.State}
+    {x var : Identifier} {b mask : UInt256} :
+    exec (n+12) (.Let [x] (.some (.Call (Sum.inl .AND)
+        [.Call (Sum.inl .CALLDATALOAD) [.Call (Sum.inl .ADD) [.Var var, .Lit b]],
+         .Call (Sum.inl .NOT) [.Lit mask]]))) co s
+      = .ok (s.insert x
+          ((EvmYul.State.calldataload s.toState (s[var]!.add b)).land mask.lnot)) :=
+  exec_let_binop (n := n+6) (co := co) (s := s) (x := x) (OP := .AND)
+    (e₁ := .Call (Sum.inl .CALLDATALOAD) [.Call (Sum.inl .ADD) [.Var var, .Lit b]])
+    (e₂ := .Call (Sum.inl .NOT) [.Lit mask])
+    (v₁ := EvmYul.State.calldataload s.toState (s[var]!.add b))
+    (v₂ := mask.lnot)
+    (out := (EvmYul.State.calldataload s.toState (s[var]!.add b)).land mask.lnot)
+    (hprim := primCall_and (n := n+10) (s := s)
+      (EvmYul.State.calldataload s.toState (s[var]!.add b)) mask.lnot)
+    (he₁ := eval_unop1 (n := n+4) (co := co) (s := s) (OP := .CALLDATALOAD)
+      (f := EvmYul.State.calldataload s.toState)
+      (hprim := primCall_calldataload (n := n+6) (s := s) (s[var]!.add b))
+      (he := eval_tree_add_var_lit (n := n) (co := co) (s := s) (x := var) (b := b)))
+    (he₂ := eval_not_mask (n := n+6) mask)
+
 /-! ## Back-half trace: forced-zero skip + loop-var inits (body[25:32]) -/
 
 private def dValReadId : Identifier := "usr_dVal"
