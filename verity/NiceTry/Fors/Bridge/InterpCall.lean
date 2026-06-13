@@ -104,6 +104,17 @@ theorem call_ok {args fn yc f s₂}
   conv_lhs => rw [call]
   rw [hfind]; simp only [hlook]; rw [hbody]
 
+/-- `call` propagates a function-body exception, including `YulHalt`. -/
+theorem call_err {args fn yc f e}
+    (hfind : s.sharedState.accountMap.find? s.executionEnv.codeOwner = some yc)
+    (hlook : (co.getD yc.code).functions.lookup fn = some f)
+    (hbody : exec n (.Block f.body) co (👌 s.initcall f.params args) = .error e) :
+    call (n+1) args (some fn) co s = .error e := by
+  conv_lhs => rw [call]
+  rw [hfind]
+  simp only [hlook]
+  rw [hbody]
+
 /-! ## `switch` -/
 
 /-- `switch`, fully resolved: scrutinee `= c`, all case bodies run to `branches`,

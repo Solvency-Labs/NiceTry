@@ -1,4 +1,5 @@
 import NiceTry.Fors.Bridge.EvmRunRecover
+import NiceTry.Fors.Bridge.Phase4Accept
 import NiceTry.Fors.Bridge.TreeEntryFront
 import NiceTry.Fors.Bridge.TreeFinal
 
@@ -22,6 +23,7 @@ namespace NiceTry.Fors.Bridge
 
 open EvmYul EvmYul.Yul EvmYul.Yul.Ast
 open NiceTry.Fors
+open NiceTry.Fors.Proofs.Basic
 
 set_option maxHeartbeats 2000000
 
@@ -65,50 +67,50 @@ theorem recoverAfterRet3FromRet2WithLength_lookup_expr
 /-- The internal bad-length guard evaluates to nonzero exactly under the EVM-word
     inequality that `fun_recover` actually tests. -/
 theorem eval_recover_length_reject_guard_word_ne
-    (raw : RawSig) (digest : Digest)
+    (raw : RawSig) (digest : Digest) (n : Nat)
     (hword : UInt256.ofNat raw.len ≠ UInt256.ofNat SigLen) :
-    eval 28 recoverLengthRejectGuardExpr (some forsVerifierRuntime)
-        (recoverAfterRet3FromRet2WithLength raw digest) =
-      .ok (recoverAfterRet3FromRet2WithLength raw digest, UInt256.ofNat 1) := by
-  let s := recoverAfterRet3FromRet2WithLength raw digest
+    eval (n + 28) recoverLengthRejectGuardExpr (some forsVerifierRuntime)
+        (recoverAfterRet3FromRet2 raw digest) =
+      .ok (recoverAfterRet3FromRet2 raw digest, UInt256.ofNat 1) := by
+  let s := recoverAfterRet3FromRet2 raw digest
   have hsig :
       EvmYul.Yul.State.lookup! "var_sig_length" s = UInt256.ofNat raw.len := by
     dsimp [s]
-    exact recoverAfterRet3FromRet2WithLength_lookup_sig_length raw digest
+    exact recoverAfterRet3FromRet2_lookup_sig_length raw digest
   have hexpr :
       EvmYul.Yul.State.lookup! "expr" s = UInt256.ofNat SigLen := by
     dsimp [s]
     exact recoverAfterRet3FromRet2WithLength_lookup_expr raw digest
-  have hvarSig : eval 22 (.Var "var_sig_length") (some forsVerifierRuntime) s =
+  have hvarSig : eval (n + 22) (.Var "var_sig_length") (some forsVerifierRuntime) s =
       .ok (s, UInt256.ofNat raw.len) := by
     rw [eval_var]
     change Except.ok (s, EvmYul.Yul.State.lookup! "var_sig_length" s) =
       Except.ok (s, UInt256.ofNat raw.len)
     rw [hsig]
-  have hvarExpr : eval 24 (.Var "expr") (some forsVerifierRuntime) s =
+  have hvarExpr : eval (n + 24) (.Var "expr") (some forsVerifierRuntime) s =
       .ok (s, UInt256.ofNat SigLen) := by
     rw [eval_var]
     change Except.ok (s, EvmYul.Yul.State.lookup! "expr" s) =
       Except.ok (s, UInt256.ofNat SigLen)
     rw [hexpr]
-  have heq : eval 26
+  have heq : eval (n + 26)
         (.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"])
         (some forsVerifierRuntime) s =
       .ok (s, UInt256.ofNat 0) := by
-    have hraw := eval_binop2 (n := 20) (co := some forsVerifierRuntime) (OP := .EQ)
+    have hraw := eval_binop2 (n := n + 20) (co := some forsVerifierRuntime) (OP := .EQ)
         (f := UInt256.eq)
-        (primCall_eq (n := 24) (s := s)
+        (primCall_eq (n := n + 24) (s := s)
           (UInt256.ofNat raw.len) (UInt256.ofNat SigLen))
         hvarSig hvarExpr
     simpa [uint256_eq_of_ne hword] using hraw
-  change eval 28
+  change eval (n + 28)
       (.Call (Sum.inl .ISZERO)
         [.Call (Sum.inl .EQ) [.Var "var_sig_length", .Var "expr"]])
       (some forsVerifierRuntime) s = .ok (s, UInt256.ofNat 1)
   simpa [recoverLengthRejectGuardExpr, uint256_isZero_zero] using
-    (eval_unop1 (n := 24) (co := some forsVerifierRuntime) (OP := .ISZERO)
+    (eval_unop1 (n := n + 24) (co := some forsVerifierRuntime) (OP := .ISZERO)
       (f := UInt256.isZero)
-      (primCall_iszero (n := 26) (s := s) (UInt256.ofNat 0)) heq)
+      (primCall_iszero (n := n + 26) (s := s) (UInt256.ofNat 0)) heq)
 
 /-- The length-reject body sets the return variable to zero and leaves. -/
 theorem exec_recover_length_reject_body_zero
@@ -133,23 +135,23 @@ theorem exec_recover_length_reject_body_zero
     (s := 🚪 (s.insert "var" (UInt256.ofNat 0)))
 
 theorem exec_recover_length_reject_if_word_ne
-    (raw : RawSig) (digest : Digest)
+    (raw : RawSig) (digest : Digest) (n : Nat)
     (hword : UInt256.ofNat raw.len ≠ UInt256.ofNat SigLen) :
-    exec 29 (.If recoverLengthRejectGuardExpr recoverLengthRejectBody)
-        (some forsVerifierRuntime) (recoverAfterRet3FromRet2WithLength raw digest) =
-      .ok (🚪 ((recoverAfterRet3FromRet2WithLength raw digest).insert
+    exec (n + 29) (.If recoverLengthRejectGuardExpr recoverLengthRejectBody)
+        (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest) =
+      .ok (🚪 ((recoverAfterRet3FromRet2 raw digest).insert
         "var" (UInt256.ofNat 0))) := by
   rw [exec_if_true
-    (n := 28) (co := some forsVerifierRuntime)
-    (s := recoverAfterRet3FromRet2WithLength raw digest)
+    (n := n + 28) (co := some forsVerifierRuntime)
+    (s := recoverAfterRet3FromRet2 raw digest)
     (cond := recoverLengthRejectGuardExpr) (body := recoverLengthRejectBody)
-    (s' := recoverAfterRet3FromRet2WithLength raw digest)
+    (s' := recoverAfterRet3FromRet2 raw digest)
     (c := UInt256.ofNat 1)
-    (eval_recover_length_reject_guard_word_ne raw digest hword)
+    (eval_recover_length_reject_guard_word_ne raw digest n hword)
     uint256_one_ne_zero]
   simpa using exec_recover_length_reject_body_zero
-    (recoverAfterRet3FromRet2WithLength raw digest)
-    (some forsVerifierRuntime) 25
+    (recoverAfterRet3FromRet2 raw digest)
+    (some forsVerifierRuntime) (n + 25)
 
 theorem recover_length_word_ne_of_raw_ne
     (raw : RawSig) (hfit : RawSigLenFitsEvmWord raw)
@@ -158,29 +160,74 @@ theorem recover_length_word_ne_of_raw_ne
   intro hword
   exact hlen ((rawLen_word_eq_sigLen_iff_of_lt raw hfit).1 hword)
 
+/-- The setup prefix of `fun_recover`, stopping immediately before the internal
+    signature-length guard. -/
+theorem exec_recover_prefix_to_length_guard
+    (raw : RawSig) (digest : Digest) (n : Nat) :
+    exec (n + 47) (.Block forsFunRecover.body) (some forsVerifierRuntime)
+        (recoverEntryState raw digest) =
+      exec (n + 30)
+        (.Block (.If recoverLengthRejectGuardExpr recoverLengthRejectBody ::
+          forsFunRecover.body.drop 18))
+        (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest) := by
+  rw [show forsFunRecover.body =
+      (.Let ["var"] (.some (.Lit (UInt256.ofNat 0)))) ::
+        forsFunRecover.body.drop 1 from rfl]
+  rw [exec_block_cons_ok (n := n + 46) (h := by
+    simpa [recoverAfterVarInit] using
+      (exec_let_lit (n := n + 45) (co := some forsVerifierRuntime)
+        (s := recoverEntryState raw digest)
+        (vars := ["var"]) (lit := UInt256.ofNat 0)))]
+  change exec (n + 46) (.Block (forsFunRecover.body.drop 1))
+      (some forsVerifierRuntime) (recoverAfterVarInit raw digest) =
+    exec (n + 30)
+      (.Block (.If recoverLengthRejectGuardExpr recoverLengthRejectBody ::
+        forsFunRecover.body.drop 18))
+      (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest)
+  rw [show forsFunRecover.body.drop 1 =
+      (.Let ["expr"] (.some (.Call (Sum.inr "constant_FORS_SIG_LEN") []))) ::
+        forsFunRecover.body.drop 2 from rfl]
+  rw [exec_block_cons_ok (n := n + 45)
+    (h := exec_recover_let_expr_const (base := n + 2) raw digest)]
+  rw [exec_recover_ret_init_after_expr (base := n) raw digest]
+  rw [exec_recover_prefix_to_ret1_product (base := n) raw digest]
+  exact exec_recover_to_length_guard (base := n) raw digest
+
 /-! ## `evmRunRecover` zero-result plumbing -/
+
+/-- The scoped observable normalizes malformed lengths to the contract's zero
+    result after the exact internal word guard has been checked above. -/
+theorem evmRunRecover_bad_length
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len ≠ SigLen) :
+    evmRunRecover raw digest = 0 := by
+  simp [evmRunRecover, hlen]
 
 theorem evmRunRecover_zero_of_run_none
     (raw : RawSig) (digest : Digest)
-    (h : runForsRecover raw digest 100000 = none) :
+    (h : runForsRecover raw digest recoverFuel = none) :
     evmRunRecover raw digest = 0 := by
   unfold evmRunRecover
-  rw [h]
-  rfl
+  split
+  · rw [h]
+    rfl
+  · rfl
 
 theorem evmRunRecover_zero_of_run_some {raw : RawSig} {digest : Digest}
     {w : UInt256}
-    (h : runForsRecover raw digest 100000 = some w)
+    (h : runForsRecover raw digest recoverFuel = some w)
     (hw : w.toNat % 2 ^ 160 = 0) :
     evmRunRecover raw digest = 0 := by
   unfold evmRunRecover
-  rw [h]
-  simpa using hw
+  split
+  · rw [h]
+    simpa using hw
+  · rfl
 
 theorem evmRunRecover_zero_of_call_ok_zero
     (raw : RawSig) (digest : Digest) {s : EvmYul.Yul.State}
-    (h : call 100000 (forsRecoverArgs raw digest) (some "fun_recover")
-        (some forsVerifierRuntime) (forsInitialState raw digest) =
+    (h : call recoverFuel (forsRecoverArgs raw digest) (some "fun_recover")
+        (some forsVerifierRuntime) (dispatcherBeforeRecoverState raw digest) =
       .ok (s, [UInt256.ofNat 0])) :
     evmRunRecover raw digest = 0 := by
   apply evmRunRecover_zero_of_run_some (w := UInt256.ofNat 0)
@@ -191,8 +238,8 @@ theorem evmRunRecover_zero_of_call_ok_zero
 
 theorem evmRunRecover_zero_of_call_yulhalt_zero
     (raw : RawSig) (digest : Digest) {s : EvmYul.Yul.State} {v}
-    (h : call 100000 (forsRecoverArgs raw digest) (some "fun_recover")
-        (some forsVerifierRuntime) (forsInitialState raw digest) =
+    (h : call recoverFuel (forsRecoverArgs raw digest) (some "fun_recover")
+        (some forsVerifierRuntime) (dispatcherBeforeRecoverState raw digest) =
       .error (.YulHalt s v))
     (hret : fromByteArrayBigEndian s.sharedState.H_return = 0) :
     evmRunRecover raw digest = 0 := by
@@ -330,11 +377,11 @@ theorem exec_recover_forced_zero_reject_body_zero
     rfl
 
 theorem exec_recover_forced_zero_reject_from_hmsg
-    (raw : RawSig) (digest : Digest)
+    (raw : RawSig) (digest : Digest) (n : Nat)
     (hguard : (UInt256.shiftRight (recoverHmsgDVal raw digest) (UInt256.ofNat 125)).land
         (UInt256.ofNat 31) ≠ (⟨0⟩ : UInt256)) :
     ∃ S : EvmYul.Yul.State,
-      exec 30 (.Block (forsFunRecover.body.drop 25)) (some forsVerifierRuntime)
+      exec (n + 30) (.Block (forsFunRecover.body.drop 25)) (some forsVerifierRuntime)
           (recoverAfterHmsg raw digest)
         = .error (.YulHalt S ⟨1⟩)
       ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
@@ -348,20 +395,20 @@ theorem exec_recover_forced_zero_reject_from_hmsg
     exact recoverAfterHmsg_lookup_dVal raw digest
   obtain ⟨S, hbody, hzero⟩ :=
     exec_recover_forced_zero_reject_body_zero ss vs
-      (some forsVerifierRuntime) 20 hret
+      (some forsVerifierRuntime) (n + 20) hret
   refine ⟨S, ?_, hzero⟩
   rw [hs]
   rw [show forsFunRecover.body.drop 25
       = (.If recoverForcedZeroGuardExpr recoverForcedZeroRejectBody)
         :: forsFunRecover.body.drop 26 from rfl]
-  rw [exec_block_cons_err (n := 29) (co := some forsVerifierRuntime)
+  rw [exec_block_cons_err (n := n + 29) (co := some forsVerifierRuntime)
     (s := .Ok ss vs)
     (st := .If recoverForcedZeroGuardExpr recoverForcedZeroRejectBody)
     (sts := forsFunRecover.body.drop 26)
     (e := .YulHalt S ⟨1⟩)
     (h := by
       rw [exec_if_true
-        (n := 28) (co := some forsVerifierRuntime)
+        (n := n + 28) (co := some forsVerifierRuntime)
         (s := .Ok ss vs)
         (cond := recoverForcedZeroGuardExpr)
         (body := recoverForcedZeroRejectBody)
@@ -369,7 +416,7 @@ theorem exec_recover_forced_zero_reject_from_hmsg
         (c := (UInt256.shiftRight (recoverHmsgDVal raw digest) (UInt256.ofNat 125)).land
           (UInt256.ofNat 31))
         (eval_recover_forced_zero_guard ss vs (some forsVerifierRuntime)
-          (recoverHmsgDVal raw digest) 0 hdv)
+          (recoverHmsgDVal raw digest) n hdv)
         hguard]
       simpa using hbody)]
 
@@ -380,21 +427,111 @@ theorem exec_recover_forced_zero_reject_from_hmsg
 def RecoverHmsgMatchesDVal (raw : RawSig) (digest : Digest) : Prop :=
   recoverHmsgDVal raw digest = UInt256.ofNat (dValOf raw digest)
 
+/-- Model rejection implies that the exact UInt256 guard consumed by Yul is
+    nonzero. -/
+theorem recoverHmsg_guard_ne_zero_of_forcedZero_false
+    (raw : RawSig) (digest : Digest)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = false) :
+    (UInt256.shiftRight (recoverHmsgDVal raw digest) (UInt256.ofNat 125)).land
+      (UInt256.ofNat 31) ≠ (⟨0⟩ : UInt256) := by
+  intro hzero
+  have hcalc :
+      ((UInt256.shiftRight (recoverHmsgDVal raw digest) (UInt256.ofNat 125)).land
+        (UInt256.ofNat 31)).toNat =
+        evmOmittedIndexShape (dValOf raw digest) := by
+    rw [uint256_land_toNat]
+    rw [uint256_shiftRight_toNat _ _ (by
+      rw [show (UInt256.ofNat 125).toNat = 125 from
+        uint256_ofNat_toNat_of_lt _ (by decide)]
+      decide)]
+    rw [recoverHmsgDVal_toNat_eq_dValOf raw digest hwf hdigest]
+    rw [show (UInt256.ofNat 125).toNat = 125 from
+      uint256_ofNat_toNat_of_lt _ (by decide)]
+    rw [show (UInt256.ofNat 31).toNat = 31 from
+      uint256_ofNat_toNat_of_lt _ (by decide)]
+    rw [Nat.shiftRight_eq_div_pow]
+    rw [show (31 : Nat) = 2 ^ 5 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod]
+    rfl
+  have hshapeZero : evmOmittedIndexShape (dValOf raw digest) = 0 := by
+    rw [← hcalc, hzero]
+    rfl
+  have hshape := forcedZero_eq_evm_shape (dValOf raw digest)
+  rw [hfz, hshapeZero] at hshape
+  simp at hshape
+
 /-- Parameterized forced-zero reject interface.  Its only model-side premise is
     `RecoverHmsgMatchesDVal`; the rest is the concrete EVM guard/body trace. -/
 theorem exec_recover_forced_zero_reject_from_hmsg_matches
-    (raw : RawSig) (digest : Digest)
+    (raw : RawSig) (digest : Digest) (n : Nat)
     (hmatch : RecoverHmsgMatchesDVal raw digest)
     (hguard : (UInt256.shiftRight (UInt256.ofNat (dValOf raw digest))
         (UInt256.ofNat 125)).land (UInt256.ofNat 31) ≠ (⟨0⟩ : UInt256)) :
     ∃ S : EvmYul.Yul.State,
-      exec 30 (.Block (forsFunRecover.body.drop 25)) (some forsVerifierRuntime)
+      exec (n + 30) (.Block (forsFunRecover.body.drop 25)) (some forsVerifierRuntime)
           (recoverAfterHmsg raw digest)
         = .error (.YulHalt S ⟨1⟩)
       ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
-  apply exec_recover_forced_zero_reject_from_hmsg
+  apply exec_recover_forced_zero_reject_from_hmsg raw digest n
   rw [hmatch]
   exact hguard
+
+/-- Forced-zero rejection for the complete `fun_recover` body. -/
+theorem exec_recover_forced_zero_reject_body
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = false) :
+    ∃ S : EvmYul.Yul.State,
+      exec 154 (.Block forsFunRecover.body) (some forsVerifierRuntime)
+          (recoverEntryState raw digest)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
+  have hguard :=
+    recoverHmsg_guard_ne_zero_of_forcedZero_false raw digest hwf hdigest hfz
+  obtain ⟨S, hsuffix, hzero⟩ :=
+    exec_recover_forced_zero_reject_from_hmsg raw digest 99 hguard
+  refine ⟨S, ?_, hzero⟩
+  rw [show 154 = 107 + 47 by omega,
+    exec_recover_good_prefix_to_hmsg raw digest 107 hlen]
+  rw [show 107 + 29 = 99 + 37 by omega,
+    exec_recover_hmsg_named raw digest (some forsVerifierRuntime) 99]
+  simpa using hsuffix
+
+/-- Forced-zero rejection entered through the actual scoped function call. -/
+theorem call_recover_forced_zero_reject
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = false) :
+    ∃ S : EvmYul.Yul.State,
+      call recoverFuel (forsRecoverArgs raw digest) (some "fun_recover")
+          (some forsVerifierRuntime) (dispatcherBeforeRecoverState raw digest)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
+  obtain ⟨S, hbody, hzero⟩ :=
+    exec_recover_forced_zero_reject_body raw digest hlen hwf hdigest hfz
+  refine ⟨S, ?_, hzero⟩
+  unfold recoverFuel
+  apply call_err
+    (dispatcherBeforeRecoverState_account_find raw digest)
+    (by simpa using forsVerifierRuntime_lookup_fun_recover)
+  simpa [recoverEntryState, recoverGoodArgs, forsRecoverArgs] using hbody
+
+/-- The scoped executable returns zero on the model forced-zero reject branch. -/
+theorem evmRunRecover_forced_zero_reject
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = false) :
+    evmRunRecover raw digest = 0 := by
+  obtain ⟨S, hcall, hzero⟩ :=
+    call_recover_forced_zero_reject raw digest hlen hwf hdigest hfz
+  exact evmRunRecover_zero_of_call_yulhalt_zero raw digest hcall hzero
 
 /-! ## Dispatcher-routing lifts -/
 

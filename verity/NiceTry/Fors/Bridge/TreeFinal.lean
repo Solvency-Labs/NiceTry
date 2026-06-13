@@ -237,7 +237,9 @@ theorem post_loop_trace (n : Nat) (co : Option YulContract)
         = .error (.YulHalt S ⟨1⟩)
       ∧ fromByteArrayBigEndian S.sharedState.H_return
         = addressFromRoot pk.toNat
-            (compressRoots pk.toNat (fun i : TreeIndex => (rootsW i.val).toNat)) := by
+            (compressRoots pk.toNat (fun i : TreeIndex => (rootsW i.val).toNat))
+      ∧ addressFromRoot pk.toNat
+          (compressRoots pk.toNat (fun i : TreeIndex => (rootsW i.val).toNat)) < 2 ^ 160 := by
   have h32 : (UInt256.ofNat 32).toNat = 32 := uint256_ofNat_toNat_of_lt _ (by decide)
   have h0 : (UInt256.ofNat 0).toNat = 0 := uint256_ofNat_toNat_of_lt _ (by decide)
   have h864 : (UInt256.ofNat 864).toNat = 864 := uint256_ofNat_toNat_of_lt _ (by decide)
@@ -379,6 +381,7 @@ theorem post_loop_trace (n : Nat) (co : Option YulContract)
         (by rw [h32]) (by rw [hK1m, hsz1]; omega) hpkK1
       exact hd
     -- (c) H_return = the address word's bytes
+    apply And.intro
     show fromByteArrayBigEndian
         ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32)).H_return = _
     have hHr : ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).2.mstore (UInt256.ofNat 0) ((((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).2.mstore (UInt256.ofNat 32) ((((sf.toMachineState.mstore (UInt256.ofNat 32) (UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 130))).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 864)).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot)).keccak256 (UInt256.ofNat 0) (UInt256.ofNat 64)).1).land ((UInt256.shiftLeft (UInt256.ofNat 1) (UInt256.ofNat 160)).sub (UInt256.ofNat 1)))).evmReturn (UInt256.ofNat 0) (UInt256.ofNat 32)).H_return
@@ -399,6 +402,9 @@ theorem post_loop_trace (n : Nat) (co : Option YulContract)
         ByteArray.data_extract]
       exact hslot0
     rw [hHr, hread, fromBE_toByteArray, haddr, hroots]
+    rw [← hroots, ← haddr, uint256_land_toNat, mask160_value,
+      uint256_ofNat_toNat_of_lt (2 ^ 160 - 1) (by decide)]
+    exact lt_of_le_of_lt Nat.and_le_right (by decide)
 
 
 end NiceTry.Fors.Bridge

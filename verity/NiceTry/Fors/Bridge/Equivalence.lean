@@ -30,7 +30,7 @@ abbrev ContractRun := RawSig → Digest → Option Address
 /-- The refinement target: the contract agrees with the model over the
     ABI-representable raw-signature domain. -/
 def RefinesModel (run : ContractRun) : Prop :=
-  ∀ raw digest, RawSigLenFitsEvmWord raw → run raw digest = recoverRaw? raw digest
+  ∀ raw digest, ForsAbiInput raw digest → run raw digest = recoverRaw? raw digest
 
 /--
 **Sufficiency (proved).** If the contract refines the model, then a legit FORS+C
@@ -41,28 +41,24 @@ target is exactly strong enough to discharge SoLean's verifier oracle
 theorem refinement_discharges_oracle
     (run : ContractRun) (href : RefinesModel run)
     (raw : RawSig) (digest : Digest) (pkRoot : Hash16)
+    (habi : ForsAbiInput raw digest)
     (h : RawLegitSignatureFor raw digest pkRoot) :
     ∃ sig : TypedSig, decodeRaw raw = some sig ∧
       run raw digest = some (addressFromRoot sig.pkSeed pkRoot) := by
   obtain ⟨sig, hlen, hdecode, hlegit⟩ := h
-  have hbound : RawSigLenFitsEvmWord raw := by
-    unfold RawSigLenFitsEvmWord
-    rw [hlen]
-    norm_num [EvmYul.UInt256.size, SigLen, RLen, PkSeedLen, SectionLen, RealTrees,
-      K, TreeLen, A, CounterLen]
   have hrec :
       recoverRaw? raw digest = some (addressFromRoot sig.pkSeed pkRoot) :=
     legit_raw_signature_recovers_expected_address raw digest sig pkRoot hlen hdecode hlegit
-  exact ⟨sig, hdecode, by rw [href raw digest hbound]; exact hrec⟩
+  exact ⟨sig, hdecode, by rw [href raw digest habi]; exact hrec⟩
 
 /-- Same, in boolean-oracle form: contract acceptance matches `forsAccept`. -/
 theorem refinement_matches_forsAccept
     (run : ContractRun) (href : RefinesModel run)
     (expectedSigner : Address) (raw : RawSig) (digest : Digest)
-    (hbound : RawSigLenFitsEvmWord raw) :
+    (habi : ForsAbiInput raw digest) :
     (run raw digest == some expectedSigner) = forsAccept expectedSigner raw digest := by
   unfold forsAccept
-  rw [href raw digest hbound]
+  rw [href raw digest habi]
 
 /-!
 ## The open deliverable: build `evmRun` and prove `RefinesModel evmRun`

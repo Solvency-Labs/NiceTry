@@ -71,26 +71,29 @@ gap, leaving only the three execution obligations. No `sorry`, no new axiom.
 theorem forsRefines_of_branches
     (h_len : ∀ raw digest, RawSigLenFitsEvmWord raw →
         raw.len ≠ SigLen → evmRun raw digest = 0)
-    (h_guard : ∀ raw digest, raw.len = SigLen →
+    (h_guard : ∀ raw digest, raw.len = SigLen → RawSigWellFormed raw →
+        DigestFitsEvmWord digest →
         forcedZero (dValOf raw digest) = false → evmRun raw digest = 0)
-    (h_accept : ∀ raw digest, raw.len = SigLen →
+    (h_accept : ∀ raw digest, raw.len = SigLen → RawSigWellFormed raw →
+        DigestFitsEvmWord digest →
         forcedZero (dValOf raw digest) = true →
         evmRun raw digest =
           addressFromRoot (decodeTyped raw).pkSeed
             (recoverRoot (decodeTyped raw) (dValOf raw digest))) :
     ForsRefines := by
-  intro raw digest hbound
+  intro raw digest habi
+  obtain ⟨hbound, hwf, hdigest⟩ := habi
   rw [recoverRaw_eq raw digest]
   by_cases hlen : raw.len = SigLen
   · rw [if_pos hlen]
     by_cases hfz : forcedZero (dValOf raw digest) = true
     · -- accept branch
       rw [if_pos hfz]
-      simpa using h_accept raw digest hlen hfz
+      simpa using h_accept raw digest hlen hwf hdigest hfz
     · -- forced-zero reject branch
       have hfz' : forcedZero (dValOf raw digest) = false := by simpa using hfz
       rw [if_neg hfz]
-      simpa using h_guard raw digest hlen hfz'
+      simpa using h_guard raw digest hlen hwf hdigest hfz'
   · -- bad length: model rejects, contract returns address(0)
     rw [if_neg hlen]
     simpa using h_len raw digest hbound hlen

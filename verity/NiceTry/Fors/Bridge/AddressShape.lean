@@ -31,6 +31,20 @@ axiom evm_keccak_address (b : ByteArray) (pkSeed pkRoot : UInt256)
     (fromByteArrayBigEndian (ffi.KEC b)) &&& Lower160Mask
       = addressFromRoot pkSeed.toNat pkRoot.toNat
 
+theorem addressFromRoot_lt_lower160 (pkSeed pkRoot : UInt256) :
+    addressFromRoot pkSeed.toNat pkRoot.toNat < 2 ^ 160 := by
+  have h := evm_keccak_address
+    (pkSeed.toByteArray ++ pkRoot.toByteArray) pkSeed pkRoot rfl
+  calc
+    addressFromRoot pkSeed.toNat pkRoot.toNat =
+        fromByteArrayBigEndian
+          (ffi.KEC (pkSeed.toByteArray ++ pkRoot.toByteArray)) &&& Lower160Mask :=
+      h.symm
+    _ ≤ Lower160Mask := Nat.and_le_right
+    _ < 2 ^ 160 := by
+      unfold Lower160Mask
+      omega
+
 /-! ## Trusted keccak bridges for the next Class-M shapes
 
 Like `evm_keccak_address`, these axioms deliberately isolate the opaque keccak

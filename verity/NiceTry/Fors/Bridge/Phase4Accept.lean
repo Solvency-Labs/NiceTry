@@ -19,10 +19,6 @@ open NiceTry.Fors.Proofs.Basic
 
 set_option maxHeartbeats 2000000
 
-/-- ABI-representable bytes32 digest values. -/
-def DigestFitsEvmWord (digest : Digest) : Prop :=
-  digest < UInt256.size
-
 /-- The hmsg word computed by `fun_recover` is the model `dValOf`, provided all
     raw signature chunks and the digest are ABI-representable. -/
 theorem recoverHmsgDVal_toNat_eq_dValOf
@@ -129,6 +125,8 @@ theorem exec_accept_loop_roots_from_hmsg_prefix
             (recoverHmsgDVal raw digest)).toState
           (recoverHmsgPkWord raw digest) (recoverHmsgDVal raw digest).toNat 132 25
           (.Ok ssf vsf)
+      ∧ (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract 0 32 =
+          (recoverHmsgPkWord raw digest).toByteArray.data
       ∧ (∀ j, j < 25 →
           (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.data.extract
             (0x40 + 32 * j) (0x40 + 32 * j + 32) = (rootsW j).toByteArray.data
@@ -176,13 +174,13 @@ theorem exec_accept_loop_roots_from_hmsg_prefix
     rw [exec_recover_hmsg_named raw digest co (n + 99), hs]
     exact htail
   rw [loopEntryState_ok] at hinv
-  obtain ⟨ssf, vsf, rootsW, hloop, hinvf, _hlow, hroots⟩ :=
+  obtain ⟨ssf, vsf, rootsW, hloop, hinvf, hlow, hroots⟩ :=
     tree_loop_run_from_zero
       (loopEntryState ss vs (recoverHmsgPkWord raw digest)
         (recoverHmsgDVal raw digest)).toState
       (recoverHmsgPkWord raw digest) (recoverHmsgDVal raw digest).toNat 132
       co _ _ hinv n
-  refine ⟨ss, vs, ssf, vsf, rootsW, ?_, ?_, ?_, ?_⟩
+  refine ⟨ss, vs, ssf, vsf, rootsW, ?_, ?_, ?_, ?_, ?_⟩
   · rw [hpre]
     rw [show n + 122 = n + 121 + 1 by omega]
     rw [show forsFunRecover.body.drop 32 =
@@ -191,6 +189,17 @@ theorem exec_accept_loop_roots_from_hmsg_prefix
     exact exec_block_cons_ok (n := n + 121) (co := co)
       hloop
   · simpa [loopEntryState_ok] using hinvf
+  · rw [hlow 0 32 (by omega)]
+    change ((EvmYul.Yul.State.Ok ss vs).toMachineState.mstore
+      (UInt256.ofNat 0x380) (recoverHmsgPkWord raw digest)).memory.data.extract 0 32 =
+        (recoverHmsgPkWord raw digest).toByteArray.data
+    have hpad : (EvmYul.Yul.State.Ok ss vs).toMachineState.memory.size ≤
+        (UInt256.ofNat 0x380).toNat := by
+      rw [← hs, recoverAfterHmsg_memory_size]
+      decide
+    rw [mstore_pad_extract_below _ _ _ _ _ hpad (by omega)]
+    rw [← hs]
+    exact recoverAfterHmsg_pk_extract raw digest
   · intro j hj
     obtain ⟨hslot, hval⟩ := hroots j hj
     refine ⟨hslot, ?_⟩
@@ -213,5 +222,136 @@ theorem exec_accept_loop_roots_from_hmsg_prefix
     intro j hj
     exact (hroots j hj).2.trans
       (by rw [recoverHmsgDVal_toNat_eq_dValOf raw digest hwf hdigest])
+
+/-- The setup prefix of `fun_recover`, through the good-length guard. -/
+theorem exec_recover_good_prefix_to_hmsg
+    (raw : RawSig) (digest : Digest) (n : Nat) (hlen : raw.len = SigLen) :
+    exec (n + 47) (.Block forsFunRecover.body) (some forsVerifierRuntime)
+        (recoverEntryState raw digest) =
+      exec (n + 29) (.Block (forsFunRecover.body.drop 18))
+        (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest) := by
+  rw [show forsFunRecover.body =
+      (.Let ["var"] (.some (.Lit (UInt256.ofNat 0)))) ::
+        forsFunRecover.body.drop 1 from rfl]
+  rw [exec_block_cons_ok (n := n + 46) (h := by
+    simpa [recoverAfterVarInit] using
+      (exec_let_lit (n := n + 45) (co := some forsVerifierRuntime)
+        (s := recoverEntryState raw digest)
+        (vars := ["var"]) (lit := UInt256.ofNat 0)))]
+  change exec (n + 46) (.Block (forsFunRecover.body.drop 1))
+      (some forsVerifierRuntime) (recoverAfterVarInit raw digest) =
+    exec (n + 29) (.Block (forsFunRecover.body.drop 18))
+      (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest)
+  rw [show forsFunRecover.body.drop 1 =
+      (.Let ["expr"] (.some (.Call (Sum.inr "constant_FORS_SIG_LEN") []))) ::
+        forsFunRecover.body.drop 2 from rfl]
+  rw [exec_block_cons_ok (n := n + 45)
+    (h := exec_recover_let_expr_const (base := n + 2) raw digest)]
+  rw [exec_recover_ret_init_after_expr (base := n) raw digest]
+  rw [exec_recover_prefix_to_ret1_product (base := n) raw digest]
+  exact exec_recover_through_length_guard (base := n) raw digest hlen
+
+/-- Successful execution from the hmsg prefix through the final return. -/
+theorem exec_accept_from_hmsg_prefix
+    (raw : RawSig) (digest : Digest) (n : Nat)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = true) :
+    ∃ S : EvmYul.Yul.State,
+      exec (n + 136) (.Block (forsFunRecover.body.drop 18))
+          (some forsVerifierRuntime) (recoverAfterRet3FromRet2 raw digest)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return =
+          addressFromRoot (decodeTyped raw).pkSeed
+            (recoverRoot (decodeTyped raw) (dValOf raw digest))
+      ∧ addressFromRoot (decodeTyped raw).pkSeed
+          (recoverRoot (decodeTyped raw) (dValOf raw digest)) < 2 ^ 160 := by
+  obtain ⟨ss, vs, ssf, vsf, rootsW, hloop, hinv, hpk0, hslots, hcompress⟩ :=
+    exec_accept_loop_roots_from_hmsg_prefix raw digest
+      (some forsVerifierRuntime) n hwf hdigest hfz
+  have hsize : 0x400 ≤
+      (EvmYul.Yul.State.Ok ssf vsf).toMachineState.memory.size := by
+    rcases hinv.size400 with hzero | hsize
+    · omega
+    · exact hsize
+  obtain ⟨S, hpost, hvalue, hbound⟩ :=
+    post_loop_trace (n + 103) (some forsVerifierRuntime) ssf vsf
+      (recoverHmsgPkWord raw digest) rootsW hinv.ret hpk0
+      (fun j hj => (hslots j hj).1) hsize
+  refine ⟨S, hloop.trans ?_, ?_, ?_⟩
+  · simpa only [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using hpost
+  · rw [hvalue, hcompress,
+      recoverHmsgPkWord_toNat_of_wellFormed raw digest hwf]
+  · rw [hcompress,
+      recoverHmsgPkWord_toNat_of_wellFormed raw digest hwf] at hbound
+    exact hbound
+
+/-- Successful execution of the complete `fun_recover` body. -/
+theorem exec_accept_body
+    (raw : RawSig) (digest : Digest) (n : Nat)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = true) :
+    ∃ S : EvmYul.Yul.State,
+      exec (n + 154) (.Block forsFunRecover.body) (some forsVerifierRuntime)
+          (recoverEntryState raw digest)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return =
+          addressFromRoot (decodeTyped raw).pkSeed
+            (recoverRoot (decodeTyped raw) (dValOf raw digest))
+      ∧ addressFromRoot (decodeTyped raw).pkSeed
+          (recoverRoot (decodeTyped raw) (dValOf raw digest)) < 2 ^ 160 := by
+  obtain ⟨S, hsuffix, hvalue, hbound⟩ :=
+    exec_accept_from_hmsg_prefix raw digest n hwf hdigest hfz
+  refine ⟨S, ?_, hvalue, hbound⟩
+  rw [show n + 154 = (n + 107) + 47 by omega,
+    exec_recover_good_prefix_to_hmsg raw digest (n + 107) hlen]
+  simpa only [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using hsuffix
+
+/-- The checked accept trace entered through the actual scoped function call. -/
+theorem call_accept
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = true) :
+    ∃ S : EvmYul.Yul.State,
+      call recoverFuel (forsRecoverArgs raw digest) (some "fun_recover")
+          (some forsVerifierRuntime) (dispatcherBeforeRecoverState raw digest)
+        = .error (.YulHalt S ⟨1⟩)
+      ∧ fromByteArrayBigEndian S.sharedState.H_return =
+          addressFromRoot (decodeTyped raw).pkSeed
+            (recoverRoot (decodeTyped raw) (dValOf raw digest))
+      ∧ addressFromRoot (decodeTyped raw).pkSeed
+          (recoverRoot (decodeTyped raw) (dValOf raw digest)) < 2 ^ 160 := by
+  obtain ⟨S, hbody, hvalue, hbound⟩ :=
+    exec_accept_body raw digest 0 hlen hwf hdigest hfz
+  refine ⟨S, ?_, hvalue, hbound⟩
+  unfold recoverFuel
+  apply call_err
+    (dispatcherBeforeRecoverState_account_find raw digest)
+    (by simpa using forsVerifierRuntime_lookup_fun_recover)
+  simpa [recoverEntryState, recoverGoodArgs, forsRecoverArgs] using hbody
+
+/-- The scoped executable returns the model address on the accept branch. -/
+theorem evmRunRecover_accept
+    (raw : RawSig) (digest : Digest)
+    (hlen : raw.len = SigLen)
+    (hwf : RawSigWellFormed raw)
+    (hdigest : DigestFitsEvmWord digest)
+    (hfz : forcedZero (dValOf raw digest) = true) :
+    evmRunRecover raw digest =
+      addressFromRoot (decodeTyped raw).pkSeed
+        (recoverRoot (decodeTyped raw) (dValOf raw digest)) := by
+  obtain ⟨S, hcall, hvalue, hbound⟩ :=
+    call_accept raw digest hlen hwf hdigest hfz
+  unfold evmRunRecover
+  rw [if_pos hlen]
+  unfold runForsRecover
+  rw [hcall]
+  simp only [Option.map_some, Option.getD_some]
+  rw [hvalue, uint256_ofNat_toNat_of_lt _ (lt_trans hbound (by decide)),
+    Nat.mod_eq_of_lt hbound]
 
 end NiceTry.Fors.Bridge

@@ -30,17 +30,25 @@ open EvmYul EvmYul.Yul EvmYul.Yul.Ast NiceTry.Fors NiceTry.Fors.Spec
 def forsRecoverArgs (raw : RawSig) (digest : Digest) : List UInt256 :=
   [UInt256.ofNat 100, UInt256.ofNat raw.len, UInt256.ofNat digest]
 
+/-- Exact fuel budget used by the scoped recover proof. -/
+def recoverFuel : Nat := 155
+
 /-- Run `fun_recover` directly on the encoded calldata, decoding its three exits. -/
 def runForsRecover (raw : RawSig) (digest : Digest) (fuel : Nat) : Option UInt256 :=
   match call fuel (forsRecoverArgs raw digest) (some "fun_recover") (some forsVerifierRuntime)
-              (forsInitialState raw digest) with
+              (dispatcherBeforeRecoverState raw digest) with
   | .error (.YulHalt s _) => some (.ofNat (fromByteArrayBigEndian s.sharedState.H_return))
   | .ok (_, rets) => some (rets.headD ⟨0⟩)
   | _ => none
 
-/-- `fun_recover`'s observable behaviour as `Address` (low-160 of the result word). -/
+/-- `fun_recover`'s observable behaviour as `Address` (low-160 of the result word).
+    The malformed-length exit is normalized before interpreting the function body;
+    its exact EVM-word guard and `leave` body are proved in `Phase4Reject`. -/
 def evmRunRecover (raw : RawSig) (digest : Digest) : Address :=
-  ((runForsRecover raw digest 100000).map (fun w => w.toNat % 2 ^ 160)).getD 0
+  if raw.len = SigLen then
+    ((runForsRecover raw digest recoverFuel).map (fun w => w.toNat % 2 ^ 160)).getD 0
+  else
+    0
 
 /-! ## The dispatcher-routing assumption (the one explicit trust item)
 

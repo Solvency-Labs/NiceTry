@@ -236,6 +236,7 @@ structure LoopInv (T : EvmYul.State .Yul) (pk : UInt256) (dVal ptr0 : Nat)
   ret2 : s[ret2Id]! = UInt256.ofNat 96
   pkSlot : s.toMachineState.memory.data.extract 0x380 0x3a0 = pk.toByteArray.data
   size : 0x3a0 ≤ s.toMachineState.memory.size
+  size400 : t = 0 ∨ 0x400 ≤ s.toMachineState.memory.size
   ptrB : ptr0 + 96 * 25 < UInt256.size
 
 /-- Ok-exposure of the full body exit (the root store keeps the varstore of
@@ -275,7 +276,8 @@ theorem tree_iter_body_facts
       ∧ (EvmYul.Yul.State.Ok a₂ b₂).toMachineState.memory.data.extract
           (0x40 + 32 * t) (0x40 + 32 * t + 32) = rootW.toByteArray.data
       ∧ rootW.toNat = loopRootV pk T dVal ptr0 t := by
-  obtain ⟨hT, husrT, hptr, hroot, hbase, hcur, hret, hret2, hpk, hsize, hptrB⟩ := inv
+  obtain ⟨hT, husrT, hptr, hroot, hbase, hcur, hret, hret2, hpk, hsize, _hsize400,
+    hptrB⟩ := inv
   -- entry selector facts, in indexAt-parity form
   have hidx32 : indexAt dVal t = (dVal >>> (5 * t)) % 32 := (cursor_mod_indexAt dVal t).symm
   have hsel0 : (treeSelector0Word (.Ok ss vs) = UInt256.ofNat 0 ∧ indexAt dVal t % 2 = 0)
@@ -519,7 +521,7 @@ theorem tree_iter_step_full
   obtain ⟨a₂, b₂, rootW, hIter, hT', hu, hp, hr, hb, hd, hrt, hr2, hsz, hlow,
     hpks, hslot, hval⟩ := tree_iter_body_facts T pk dVal ptr0 t ss vs ht inv
   refine ⟨a₂, b₂, rootW, hIter, ?_, ?_, ?_, hval⟩
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, inv.ptrB⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, inv.ptrB⟩
     · rw [treePostState_toState]
       exact hT'
     · rw [treePostState_usrT, hu, uint256_ofNat_add t 1 (by
@@ -550,6 +552,9 @@ theorem tree_iter_step_full
       exact hpks
     · rw [treePostState_toMachineState]
       omega
+    · right
+      rw [treePostState_toMachineState]
+      exact hsz
   · intro lo hi hhi
     rw [treePostState_toMachineState]
     exact hlow lo hi hhi

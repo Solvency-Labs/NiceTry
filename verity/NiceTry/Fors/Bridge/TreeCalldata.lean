@@ -444,13 +444,6 @@ theorem treeMaskedCalldataWord_read16 (raw : RawSig) (digest : Digest)
 
 /-! ## Well-formed raw signatures and the loop's closed-form reads -/
 
-/-- Domain restriction for `ForsRefines`: every 16-byte field of the raw
-    signature is a packed top-half word (`v = (v / 2^128) * 2^128 < 2^256`),
-    matching the `read16` convention and the ABI encoder. -/
-def RawSigWellFormed (raw : RawSig) : Prop :=
-  ∀ k : Nat, k ≤ 152 →
-    raw.read16 (16 * k) % 2 ^ 128 = 0 ∧ raw.read16 (16 * k) < 2 ^ 256
-
 /-- The loop's masked sk read for tree `j` (at `ptr0 = 132`) is the
     raw-signature field at `treeOffset j = 32 + 96 j`. -/
 theorem loopSk_read16 (raw : RawSig) (digest : Digest)

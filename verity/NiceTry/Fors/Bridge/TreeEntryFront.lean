@@ -302,6 +302,20 @@ theorem recoverAfterHmsg_memory_size (raw : RawSig) (digest : Digest) :
     (recoverHmsgCounterWord raw digest)
     (recoverHmsg_entry_memory_size raw digest)).2.2.2.2.2
 
+theorem recoverAfterHmsg_pk_extract (raw : RawSig) (digest : Digest) :
+    (recoverAfterHmsg raw digest).toMachineState.memory.data.extract 0 32 =
+      (recoverHmsgPkWord raw digest).toByteArray.data := by
+  rw [recoverAfterHmsg_toMachineState, keccak256_memory,
+    recoverHmsgAfterStores_toMachineState]
+  exact (hmsg_window_after_5
+    (recoverAfterRet3FromRet2 raw digest).toMachineState
+    (recoverHmsgPkWord raw digest)
+    (recoverHmsgRWord raw digest)
+    (recoverHmsgDigestWord raw digest)
+    recoverHmsgDomainWord
+    (recoverHmsgCounterWord raw digest)
+    (recoverHmsg_entry_memory_size raw digest)).1
+
 theorem recoverAfterHmsg_lookup_pkSeed (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "usr_pkSeed" (recoverAfterHmsg raw digest) =
       recoverHmsgPkWord raw digest := by

@@ -580,15 +580,15 @@ def dispatcherBeforeRecoverState (raw : RawSig) (digest : Digest) : EvmYul.Yul.S
   dispatcherAfterLength raw
     (dispatcherAfterOffset (dispatcherAfterFreeMemPtr (forsInitialState raw digest)))
 
-/-- Concrete `fun_recover` arguments in the ABI-good path:
+/-- Concrete `fun_recover` arguments decoded by the dispatcher:
     signature payload offset, signature length, digest. -/
-def recoverGoodArgs (digest : Digest) : List UInt256 :=
-  [UInt256.ofNat 100, UInt256.ofNat SigLen, UInt256.ofNat digest]
+def recoverGoodArgs (raw : RawSig) (digest : Digest) : List UInt256 :=
+  [UInt256.ofNat 100, UInt256.ofNat raw.len, UInt256.ofNat digest]
 
-/-- Callee entry state for the good-length `fun_recover` path. -/
+/-- Callee entry state for the decoded `fun_recover` call. -/
 def recoverEntryState (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
   👌 (dispatcherBeforeRecoverState raw digest).initcall
-    forsFunRecover.params (recoverGoodArgs digest)
+    forsFunRecover.params (recoverGoodArgs raw digest)
 
 /-- State after `fun_recover`'s first statement, `var := 0`. -/
 def recoverAfterVarInit (raw : RawSig) (digest : Digest) : EvmYul.Yul.State :=
@@ -714,7 +714,7 @@ theorem recoverEntryState_lookup_sig_offset (raw : RawSig) (digest : Digest) :
 
 theorem recoverEntryState_lookup_sig_length (raw : RawSig) (digest : Digest) :
     EvmYul.Yul.State.lookup! "var_sig_length" (recoverEntryState raw digest) =
-      UInt256.ofNat SigLen := by
+      UInt256.ofNat raw.len := by
   rfl
 
 theorem recoverEntryState_lookup_digest (raw : RawSig) (digest : Digest) :

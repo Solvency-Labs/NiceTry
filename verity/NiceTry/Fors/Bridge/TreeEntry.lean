@@ -402,6 +402,7 @@ theorem exec_recover_tail_to_loopInv
       exact h
     size := by
       rw [loopEntry_toMachineState, mstore_pad_size _ _ _ hpad hsmall, o380_toNat]
+    size400 := Or.inl rfl
     ptrB := by decide
   }
 

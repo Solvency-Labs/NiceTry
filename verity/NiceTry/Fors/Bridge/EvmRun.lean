@@ -76,7 +76,7 @@ def evmRun (raw : RawSig) (digest : Digest) : Address :=
     multi-week proof** (the FORS tree-loop induction + ABI-parse), decomposed
     below. NOT proved here. -/
 def ForsRefines : Prop :=
-  ∀ (raw : RawSig) (digest : Digest), RawSigLenFitsEvmWord raw →
+  ∀ (raw : RawSig) (digest : Digest), ForsAbiInput raw digest →
     evmRun raw digest = (recoverRaw? raw digest).getD 0
 
 /-!

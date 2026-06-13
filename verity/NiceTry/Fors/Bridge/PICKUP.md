@@ -1,48 +1,29 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
-## Current checkpoint (2026-06-13) — parallel Phase 4 branches integrated
+## Current checkpoint (2026-06-13) — Phase 4 complete
 
-- **Tree loop:** complete. `TreeLoop.lean` proves all 25 iterations and root-buffer writes.
-- **Calldata Parts A-C:** complete. `TreeCalldata.lean` has general payload extraction,
-  masked-load-to-`read16` glue, `RawSigWellFormed`, and `loopSk`/`loopSib` (`loopSk_read16`,
-  `loopSib_read16` connect them to `treeOffset`/`authOffset` under `RawSigWellFormed`).
-- **Post-loop:** complete. `TreeFinal.lean` contains roots compression, address derivation,
-  and return-side machinery.
-- **Pre-loop support:** complete. `TreePreLoop.lean` proves the padding `mstore` calculus
-  (`byteArray_write_pad`, `mstore_pad_{size,extract_self,extract_below}`) and the five-word
-  hmsg keccak window (`hmsg_read_of_extracts`, `hmsg_derivation_of_extracts`).
-- **Pre-loop back-half:** complete. `TreeEntry.lean` proves `hmsg_window_after_5` (the five
-  hmsg stores over a 96-byte entry → the [0,0xa0) window + size) and
-  `exec_recover_tail_to_loopInv` (`body[25:32]`: forced-zero skip + `mstore(0x380,pkSeed)` +
-  5 loop-var inits → `LoopInv 0` at `ptr0=132`, the input `tree_loop_run_from_zero` wants).
-- **Pre-loop front-half and composition:** complete in `TreeEntryFront.lean`.
-  `exec_recover_hmsg_named` executes `body[18:24]` through all five stores and the hmsg
-  keccak. `recoverHmsgDVal_toNat` identifies the resulting word with model `hMsg` over
-  the five stored words. `exec_recover_preloop_to_loopInv` composes front + back and lands
-  at `body.drop 32` with `LoopInv 0`.
-- **Accept branch (`Phase4Accept.lean`):** header/counter/digest calldata glue is proved,
-  including the padded final counter chunk; model forced-zero is converted to the exact
-  UInt256 guard; `loopRootV` is connected to `reconstructTree`; and
-  `exec_accept_loop_roots_from_hmsg_prefix` composes the hmsg prefix, `LoopInv 0`, all 25
-  loop iterations, and `compressRoots = recoverRoot`. It stops at `body.drop 33`.
-- **Reject branches (`Phase4Reject.lean`):** the bad-length word guard/body is proved;
-  the forced-zero rejecting branch is proved from the named post-hmsg state through
-  `YulHalt` with zero return data; zero-result plumbing and dispatcher lift wrappers are
-  proved. The outer direct-entry `call` compositions are still open.
-- **Exact remaining execution work:**
-  1. Strengthen/carry the accept result with the below-`0x40` preservation and final
-     memory-size facts needed by `post_loop_trace`, then compose `body.drop 33` through
-     `call`/`runForsRecover`/`evmRunRecover`.
-  2. Compose the actual `fun_recover` entry prefix with the bad-length state and with
-     the post-hmsg forced-zero theorem, yielding complete `evmRunRecover = 0` facts.
-  3. Lift the three completed scoped facts through `evmRun_eq_recover_of_sigLen` /
-     `dispatcher_routes_to_recover` and apply `forsRefines_of_branches`.
-- **Model-domain blocker:** the strongest checked accept glue requires both
-  `RawSigWellFormed raw` and `DigestFitsEvmWord digest`. `ForsRefines` currently assumes
-  only `RawSigLenFitsEvmWord raw`. This is a real statement mismatch: arbitrary
-  `RawSig.read16 : Nat` values and `Digest = Nat` can exceed their ABI field widths and
-  are truncated by the EVM encoder. Normalize the model inputs to ABI words or strengthen
-  the refinement domain before claiming the universal theorem.
+- **Final theorem:** `Phase4.phase4_forsRefines : ForsRefines` proves that the
+  deployed FORS verifier observable agrees with `recoverRaw?` on `ForsAbiInput`.
+- **ABI domain fixed honestly:** `RawDomain.lean` now defines `ForsAbiInput` as
+  representable length + packed 16-byte fields + a bytes32-sized digest. The old
+  length-only statement was false for unbounded model `Nat` values because ABI
+  encoding truncates them.
+- **Accept path closed:** `Phase4Accept.lean` executes the real scoped call through
+  the complete prefix, hmsg transcript, 25-tree loop, roots compression, low-160
+  address derivation, and final `RETURN`.
+- **Reject paths closed:** `Phase4Reject.lean` proves the exact malformed-length
+  word guard/body and the forced-zero `YulHalt` zero return. The scoped observable
+  normalizes malformed lengths to zero before running the checked good-length call.
+- **Fuel is exact:** the proof uses `recoverFuel = 155`; Class-A prefix lemmas are
+  fuel-parametric, so no fuel-monotonicity assumption was added.
+- **Dispatcher boundary:** `dispatcher_routes_to_recover` remains the single
+  deployed-dispatcher routing assumption. Removing it is Phase 5.
+- **Build/audit:** `lake build NiceTry` passes all 1169 modules.
+  `#print axioms phase4_forsRefines` reports only Lean core plus the documented
+  dispatcher, keccak, FFI, and word-codec trust items. No `sorryAx`.
+- **Next:** discharge dispatcher routing, split the bundled keccak/encoding
+  assumptions, upstream the codec/FFI facts, and flip the 12 Verity
+  `local_obligations` from `.assumed` to `.proved`.
 - **GOTCHA (GetElem on string literals):** `state[("foo":Identifier)]!` FAILS GetElem
   synthesis (`GetElem? Yul.State String ?m ?m`). Use a `def fooId : Identifier := "foo"`
   index (like `retId`) OR phrase via `EvmYul.Yul.State.lookup! "foo" s` (a plain arg).
@@ -51,7 +32,8 @@
   `state_getElem_finsert_ne` (Finmap form) won't match a `State.insert` chain — use a `show`
   to the collapsed `Ok a (vs.insert ...)` form (defeq by rfl) first. `exec_let_lit` produces
   `vars.head!` keys; clean with `simp only [List.head!_cons]`.
-- **Build:** `lake build NiceTry` passes all 1166 modules on `agent/tree-loop-A2`.
+- **Build:** `lake build NiceTry` passes all 1169 modules on
+  `agent/phase4-integration`.
 
 ## Trust surface (12 labeled axioms — `#print axioms` shows only these + Lean core)
 
@@ -582,10 +564,10 @@ discharge plan) and [`CLASS-M.md`](./CLASS-M.md) (the EVM↔model memory finding
   ```bash
   git remote add solvency https://github.com/Solvency-Labs/NiceTry.git   # if missing
   git fetch solvency
-  git checkout -B agent/tree-loop-A2 --track solvency/agent/tree-loop-A2
+  git checkout -B agent/phase4-integration --track solvency/agent/phase4-integration
   ```
-- **Branch:** current development is on `agent/tree-loop-A2`, which contains the
-  completed tree loop and M4 assembly support ahead of `evmrun-runtime`.
+- **Branch:** current development is on `agent/phase4-integration`, which contains
+  the completed `phase4_forsRefines` theorem.
 - **Path:** all Lean is under `verity/NiceTry/Fors/`; the EVM bridge is in
   `verity/NiceTry/Fors/Bridge/`.
 
@@ -607,7 +589,8 @@ Dependencies are pinned in `lakefile.lean` (`verity@bd211c5`, which pulls
 
 ## 2. What is DONE — do not redo this
 
-All of the following is committed on `agent/tree-loop-A2`, **`sorry`/`admit`-free**,
+All of the following is committed on `agent/phase4-integration`,
+**`sorry`/`admit`-free**,
 with trust localized to **12 labeled axioms** on this branch (verify with
 `#print axioms`):
 
@@ -681,12 +664,9 @@ compose each branch from the actual `call`/`fun_recover` entry to obtain the two
     calldata layout, dispatcher words, masked header/payload reads, and model-opening
     values. Do not rebuild this layer.
 
-### WS-2 · M4 execution assembly — accept prefix + loop complete, suffix open
-`TreeEntryFront.lean` executes statements 18–31 and establishes `LoopInv 0`.
-`Phase4Accept.lean` connects the encoded fields to the model and runs all 25
-iterations, proving the compressed roots equal `recoverRoot`. Remaining: retain
-the loop preservation/size facts required by `post_loop_trace`, run statements
-33–36, and expose the result through `call`/`runForsRecover`/`evmRunRecover`.
+### WS-2 · M4 execution assembly — ✅ **DONE**
+`Phase4Accept.lean` and `Phase4Reject.lean` close the three observable branches
+through `call`/`runForsRecover`/`evmRunRecover`.
 
 ### WS-3 · The FORS tree loop  — ✅ **DONE**
 `TreeLeaf.lean` through `TreeLoop.lean` prove the real loop end to end: execution
@@ -695,15 +675,15 @@ and all root-buffer writes. `TreeCalldata.lean` supplies the model-opening value
 and `Phase4Accept.lean` now connects those values to `recoverRoot`. Do not
 reimplement the induction.
 
-### WS-4 · Assemble `RefinesModel evmRun`  — ✅ **DONE** (`Bridge/Refinement.lean`)
+### WS-4 · Assemble deployed refinement — ✅ **DONE**
 `forsRefines_of_branches` reduces `ForsRefines` to exactly three interpreter-run
 obligations — `h_len` (bad length → `address(0)`), `h_guard` (forced-zero reject →
 `address(0)`), `h_accept` (otherwise `= addressFromRoot pkSeed (recoverRoot …)`).
 All model-side glue (the `recoverRaw?` case-split + `none ↔ address(0)`) is proved;
 adds **zero trust** (`#print axioms` = `propext/Classical.choice/Quot.sound`).
-The reduction theorem is complete, but none of its three execution hypotheses is
-yet exported end to end. In addition, its current universal domain must be aligned
-with the ABI-representability requirements exposed by `Phase4Accept.lean`.
+`Phase4.lean` instantiates all three obligations and exports
+`phase4_forsRefines : ForsRefines`. `ForsRefines` and `RefinesModel` now use the
+truthful `ForsAbiInput` domain.
 
 ### Finishing step (after WS-1..4)
 Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
@@ -713,15 +693,15 @@ Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
 ---
 
 ## 4. Suggested grab order
-- **First:** settle the refinement domain (`RawSigWellFormed` and bytes32 digest
-  normalization/bounds), because it determines the final theorem signatures.
-- **Second:** finish the short accept suffix and direct-call composition.
-- **Third:** compose the two reject paths from the direct recover entry.
-- **Then:** instantiate `forsRefines_of_branches`, remove
-  `dispatcher_routes_to_recover`, and flip the 12 accounting obligations.
+- **First:** replace `dispatcher_routes_to_recover` with the dispatcher
+  switch/fuel composition theorem.
+- **Second:** split the five `evm_keccak_*` bridges into keccak-only trust plus
+  proved transcript encoding/masking.
+- **Third:** upstream/discharge the codec and FFI size facts.
+- **Then:** flip the 12 Verity accounting obligations.
 
 ## 5. Build status of this branch
-- **`lake build NiceTry` — verified green (2026-06-13):** 1164 modules built,
+- **`lake build NiceTry` — verified green (2026-06-13):** 1169 modules built,
   no errors, and the three
   `#check_contract ok` for the Verity kernels.
 - **Axiom audit (`#print axioms`) — clean:** no `sorryAx` anywhere. The bridge
