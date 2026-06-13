@@ -15,17 +15,50 @@
   hmsg stores over a 96-byte entry → the [0,0xa0) window + size) and
   `exec_recover_tail_to_loopInv` (`body[25:32]`: forced-zero skip + `mstore(0x380,pkSeed)` +
   5 loop-var inits → `LoopInv 0` at `ptr0=132`, the input `tree_loop_run_from_zero` wants).
+- **Front-half helpers:** done. `TreeEntry.lean` has `exec_let_keccak_lit_lit` (body[24]) and
+  `exec_let_masked_addvlit` (body[18]) — both pure interpreter reductions (Lean core only).
 - **Exact stopping point:** the FRONT-half `fun_recover.body[18:24]` exec trace is not yet
-  written — the let `usr_pkSeed`, the five hmsg `mstore`s (apply `hmsg_window_after_5`), and
-  the `usr_dVal := keccak256(0,0xa0)` let (apply `hmsg_derivation_of_extracts`). It must
-  produce the post-keccak `.Ok ss vs` state with `usr_dVal` bound + memory size `0xa0` that
-  `exec_recover_tail_to_loopInv` consumes. Entry: `recoverAfterRet3FromRet2` (ClassARecover),
-  whose machine memory is `empty.mstore(64,0x80)` (size 96) — `hmsg_window_after_5`'s shape.
-  NOTE: `runForsRecover` enters `fun_recover` from `forsInitialState` with EMPTY memory
-  (`initcall` resets only the var-store, preserves `sharedState`/memory); the dispatcher's
-  `mstore(64,0x80)` is only present on the ClassARecover entry. Both differ only below 0xa0,
-  which the five hmsg stores overwrite — so `hmsg_window_after_5` works for either with the
-  right entry-size argument (96 for the ClassARecover trace).
+  written. All building blocks exist; it is a mechanical cons-chain. Entry:
+  `recoverAfterRet3FromRet2` (ClassARecover), machine memory `empty.mstore(64,0x80)` (size 96),
+  the shape `hmsg_window_after_5` wants. NOTE: `runForsRecover` enters from `forsInitialState`
+  with EMPTY memory (`initcall` resets only the var-store, preserves `sharedState`/memory); the
+  dispatcher's `mstore(64,0x80)` is only on the ClassARecover entry — they agree below 0xa0,
+  which the five hmsg stores overwrite, so `hmsg_window_after_5` works for either (entry-size 96).
+
+  **FRONT-HALF ASSEMBLY RECIPE** (`exec_recover_hmsg_reduce`, conclude with an existential
+  post-state to dodge spelling the masked values / GetElem-on-literal):
+  - Fuel: start `exec (n+37) (.Block (body.drop 18))`; 7 cons peels → `exec (n+30) (.Block
+    (body.drop 25))`, which `exec_recover_tail_to_loopInv` consumes.
+  - Per statement (each via `rw [show body.drop K = <raw stmt> :: body.drop (K+1) from rfl,
+    exec_block_cons_ok (n := …) (h := <step>)]` — write the RAW AND/CALLDATALOAD/NOT/Lit
+    forms in the `show`, NOT the `recover*` defs, so `eval_tree_masked_calldata` matches; the
+    mask literal is `UInt256.ofNat 0xffffffffffffffffffffffffffffffff`):
+    - 18 `let usr_pkSeed`: `exec_let_masked_addvlit` (var:="var_sig_offset", b:=ofNat 0x10).
+    - 19 `mstore(0, usr_pkSeed)`: `exec_mstore_lit` (a:=ofNat 0, e:=.Var "usr_pkSeed";
+      he:=eval_var then `state_getElem_insert_self` ⇒ value = w0).
+    - 20 `mstore(ret, maskedR)`: `exec_mstore_expr`; he₁ = eval `.Var "ret"` REWRITTEN to
+      `ofNat 0x20` (peel: ok_set_getElem + insert_ne usr_pkSeed + hret) so the offset is a
+      LITERAL (matches `hmsgMem`); he₂ = `eval_tree_masked_calldata` (e:=.Var
+      "var_sig_offset", eval_var).
+    - 21 `mstore(0x40, var_digest)`: `exec_mstore_lit` (a:=ofNat 0x40, e:=.Var "var_digest").
+    - 22 `mstore(ret_2, not(2))`: `exec_mstore_expr`; he₁ = eval `.Var "ret_2"` rewritten to
+      `ofNat 96` (= ofNat 0x60); he₂ = `eval_not_mask`-style (NOT[Lit 2]) ⇒ (ofNat 2).lnot.
+    - 23 `mstore(128, maskedCounter)`: `exec_mstore_lit` (a:=ofNat 128); he₂ =
+      `eval_tree_masked_calldata` with e = `ADD[ADD[Var "var_sig_offset", Var "product"],
+      Var "ret"]` (nested `eval_binop2 .ADD` / `eval_tree_add_var_var` + `eval_var`).
+    - 24 `let usr_dVal := keccak256(0,0xa0)`: `exec_let_keccak_lit_lit`.
+  - The 5 mstores thread the machine state to exactly
+    `hmsgMem (Ok ss vs).toMachineState w0 w1 w2 w3 w4` (offsets came out as the literals
+    0,0x20,0x40,0x60,128 via the he₁ rewrites). Apply `hmsg_window_after_5` (hsize: entry
+    memory size = 96) for the [0,0xa0) window + size; `keccak256_memory` keeps size 0xa0 after
+    body[24]. `w3 = (ofNat 2).lnot` and `(ofNat 2).lnot.toNat = ForsDomainWord` (rfl /
+    `uint256_not_two_domain`) feeds `hmsg_derivation_of_extracts`.
+  - Existential conclusion gives the tail's hypotheses: `[retId]!=0x20`, `[ret2Id]!=96`,
+    `lookup! "var_sig_offset" = 100`, `lookup! "usr_pkSeed" = w0`, `lookup! "usr_dVal" = dvW`,
+    `memory.size = 0xa0` (each by peeling the body18-insert + 5 setMachineStates + body24-insert
+    with `ok_set_getElem`/`ok_set_insert_getElem` + `state_getElem_insert_ne`/`finsert_ne`).
+  - Compose: `obtain` the existential, then `exec_recover_tail_to_loopInv` with `pk:=w0`,
+    `dv:=dvW` (supply `hfz` — see below) → full `body.drop 18 → for-loop + LoopInv 0`.
 - **After the front-half:** compose front + `exec_recover_tail_to_loopInv` +
   `tree_loop_run_from_zero` + `post_loop_trace` through `call`/`runForsRecover` into
   `h_accept`; discharge the `hfz` (forced-zero=0) hypothesis from `forcedZero (dValOf)=true`
