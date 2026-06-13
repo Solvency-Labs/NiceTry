@@ -133,6 +133,17 @@ theorem hmsg_window_after_5 (m : MachineState) (w0 w1 w2 w3 w4 : UInt256)
 
 /-! ## Front-half statement helpers (body[18:24]) -/
 
+/-- General read-through of `setMachineState` (it never touches the var-store), for
+    ANY state — the front-half threads reads of `ret`/`ret_2`/`var_sig_offset` back
+    through the five hmsg `mstore`s (= `setMachineState`s). Generalizes
+    `ok_set_getElem`, which requires an `Ok` base. -/
+theorem setMachineState_getElem (s : EvmYul.Yul.State) (m : MachineState)
+    (y : Identifier) :
+    (s.setMachineState m)[y]! = s[y]! := by
+  cases s <;> rfl
+
+
+
 /-- `let x := keccak256(<lit>, <lit>)` — the `usr_dVal` hash (body[24]). -/
 theorem exec_let_keccak_lit_lit {n co} {s : EvmYul.Yul.State} {x : Identifier}
     {off len : UInt256} :
