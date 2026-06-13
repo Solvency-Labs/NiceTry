@@ -67,5 +67,6 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.EvmRunRecover,
     `NiceTry.Fors.Bridge.Phase4Accept,
     `NiceTry.Fors.Bridge.Phase4Reject,
-    `NiceTry.Fors.Bridge.Phase4
+    `NiceTry.Fors.Bridge.Phase4,
+    `NiceTry.Fors.Bridge.KernelRefinement
   ]

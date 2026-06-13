@@ -21,9 +21,23 @@
 - **Build/audit:** `lake build NiceTry` passes all 1169 modules.
   `#print axioms phase4_forsRefines` reports only Lean core plus the documented
   dispatcher, keccak, FFI, and word-codec trust items. No `sorryAx`.
+- **Obligation accounting (2026-06-13): 9 of 11 discharged; last 2 held as a
+  documented boundary.** All keccak-transcript memory obligations (#1–#5, #7, #8)
+  and both Class-A calldata obligations (#6, #11) are now `proved`, each backed by
+  a real Lean theorem (see the sprint logs below). The 2 remaining —
+  `full_verifier_memory_refinement` (#9) / `full_raw_verifier_memory_refinement`
+  (#10), Class-C loop choreography on the auxiliary Verity kernel — are
+  **deliberately held `.assumed`**: the equivalent choreography is already proven
+  for the *deployed* contract (`tree_loop_run` + `Phase4Accept`, inside
+  `phase4_forsRefines`), so discharging the kernel copies would duplicate that
+  whole induction for a reference artifact (full rationale + cross-refs in
+  `OBLIGATIONS.md`).
 - **Next:** discharge dispatcher routing, split the bundled keccak/encoding
-  assumptions, upstream the codec/FFI facts, and flip the 12 Verity
-  `local_obligations` from `.assumed` to `.proved`.
+  assumptions, upstream the codec/FFI facts. The last 2 kernel obligations are out
+  of scope by decision; revisiting them means building a kernel loop-execution
+  model (the kernel analogue of `TreeLoop.lean`). Do NOT flip them without real
+  lemmas: the Verity `proved` flag is an unchecked label, so honesty rests
+  entirely on a cited Lean theorem.
 - **GOTCHA (GetElem on string literals):** `state[("foo":Identifier)]!` FAILS GetElem
   synthesis (`GetElem? Yul.State String ?m ?m`). Use a `def fooId : Identifier := "foo"`
   index (like `retId`) OR phrase via `EvmYul.Yul.State.lookup! "foo" s` (a plain arg).
@@ -50,6 +64,89 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
 - **dispatcher routing (1)** — `dispatcher_routes_to_recover` (`EvmRunRecover.lean`): the
   `fun_recover`-scoping assumption; dischargeable via the switch composition + the
   remaining fuel-monotonicity.
+
+## Sprint log (2026-06-13d) — Class-A calldata obligations discharged (9/11)
+
+- **`raw_abi_parse` (#11) + `raw_calldata` (#6) flipped to `proved`.**
+  - **#11:** new `kernel_recover_abi_parse` (in `KernelRefinement.lean`) — on
+    `recover(bytes,bytes32)` ABI calldata (`encodeForsCalldata raw digest`),
+    `calldataload(4) = 0x40` (offset), `calldataload(4+offset) = raw.len`
+    (length), `calldataload(4+offset+32)` = first `sig.data` word. Built by
+    composing `calldataload_encode_offset` / `_length` / `_payload_pair_0`.
+  - **#6:** cited `masked_calldataload_read16` (+ `_counter_`) from
+    `TreeCalldata.lean` — with sigData = 100 and any FORS field offset (a multiple
+    of 16, or the 2432 counter), `rawWord = bitAnd(calldataload(sigData+off), NMask)`
+    recovers `raw.read16(off)` under `RawSigWellFormed` (part of `ForsAbiInput`).
+  - Honesty model identical to the `mstore` obligations: the residual is that the
+    compiler maps the kernel's `calldataload` to EVMYulLean's verbatim. Axiom
+    audit on `kernel_recover_abi_parse`: only `uint256_toByteArray_{size,roundtrip}`
+    + `ffi_zeroes_eq_empty` + Lean core; no `sorry`. `lake build NiceTry` green
+    (1170 modules, all `#check_contract ok`).
+- **Remaining 2 = the Class-C choreography capstone** (`full_*_verifier_memory_refinement`,
+  #9/#10): need the kernel `forEach` loop's *executed* memory behaviour
+  (pkSeed preserved, 25 roots at `0x40+32t`, scratch non-overlap, roots =
+  recovered values via `reconstructTree`). No kernel loop-execution model exists,
+  so these stay `.assumed` — not flipped.
+
+## Sprint log (2026-06-13c) — all keccak-transcript obligations discharged (7/11)
+
+- **hmsg / roots / address discharged + flipped.** Building on the leaf/node work
+  below, the remaining three keccak-transcript obligations are now `proved`:
+  - **hmsg (#3):** cited `hmsg_derivation_eq_overwrite` — the existing 5-store
+    chain (`0x00 pkSeed, 0x20 r, 0x40 digest, 0x60 dom_FORS, 0x80 counter`) is
+    byte-for-byte the kernel's `hMsg` body (`dom_FORS` = the literal `0xFF..FD` =
+    `ForsDomainWord`). Concludes `= hMsg` (no masking, matching the kernel).
+  - **roots (#7):** cited `roots_derivation_eq_from_buffer` — matches the kernel's
+    `compressRoots` exactly: a pre-populated buffer (pkSeed@0x00, roots@`[0x40,0x360)`)
+    plus the single `mstore(0x20, ADRS_roots)` then `keccak256(0,0x360)`, masked,
+    `= compressRoots`. The buffer-population precondition is the loop's job (the
+    Class-C obligations #9/#10).
+  - **address (#8):** new `kernel_address_keccak_memory_refinement` — the kernel
+    emits *both* stores (`0x00 pkSeed; 0x20 pkRoot`) onto arbitrary populated
+    memory; neither existing address lemma covered that, so it extracts pkSeed@0x00
+    from the first store and reuses `address_derivation_eq_overwrite`. Masked with
+    `Lower160Mask`, `= addressFromRoot`.
+  - Axiom audit: `kernel_address_*` uses only `evm_keccak_address` + codec/FFI +
+    Lean core. All `#check_contract ok`; `lake build NiceTry` green (1170 modules).
+- **Remaining 4 (honest stop):** `raw_calldata_refinement`,
+  `raw_abi_parse_refinement` (Class-A calldata) and the two
+  `full_*_verifier_memory_refinement` (Class-C loop choreography) are *not*
+  closed `mstore`-chain facts — they need a kernel calldata model and a kernel
+  loop-execution model respectively. Left `.assumed`; not flipped (flipping
+  without a real lemma would be a false `proved`).
+
+## Sprint log (2026-06-13b) — obligation discharge begins: leaf/node kernel keccak refinement
+
+- **`Bridge/KernelRefinement.lean` (new) — Class-M, kernel-facing.** Two real,
+  fully-proved theorems discharge the leaf/node `keccak_memory_refinement`
+  obligations of *both* Verity kernels:
+  - `kernel_leaf_keccak_memory_refinement`: over the kernel's exact 3-store leaf
+    chain (`mstore 0x380 pkSeed; 0x3a0 adrs; 0x3c0 sk`) on any scratch-sized
+    machine state, the masked `keccak256(0x380,0x60)` = model `leafHash`.
+  - `kernel_node_keccak_memory_refinement`: over the exact 4-store node chain
+    (`+ mstore 0x3e0 right`), the masked `keccak256(0x380,0x80)` = model
+    `nodeHash`.
+  - Proof = the artifact-agnostic extract calculus from `TreeMemory.lean`
+    (`mstore_extract_self`/`mstore_extract_disjoint`/`mstore_memory_size` peel each
+    slot back through the chain) feeding `leaf_/node_derivation_of_extracts`.
+  - **Why a new theorem and not the deployed-contract one:** the deployed
+    contract pre-stores `pkSeed@0x380` once (`TreeLeaf.lean` leaf body = 2 stores);
+    the kernels emit all 3/4 stores per call. Different programs, same transcript
+    — flipping the kernel flags "against the deployed lemmas" would have been an
+    overclaim, so the kernel-specific chain is proved directly.
+  - **Flags flipped (4):** `TreeKeccakKernel` leaf/node + `FullVerifierKernel`
+    leaf/node `:= proved`, each justification citing its theorem. The Verity
+    `proved` flag is a free-text label the macro never checks (parser:
+    `Verity/Macro/Translate.lean` `parseLocalObligation`); honesty here rests on
+    the cited Lean theorem, not the label.
+  - **Residual on these 4:** (a) the Verity compiler emits exactly the `unsafe do`
+    `mstore` sequence (true by inspection), and (b) keccak itself stays the
+    intended abstract boundary (`evm_keccak_{leaf,node}`) — the obligation text
+    only asks about the *memory writes + masking*, which is fully proved.
+  - **Axiom audit:** both theorems depend only on `evm_keccak_{leaf,node}`,
+    `uint256_toByteArray_size`, `ffi_zeroes_eq_empty`, and Lean core. No `sorry`.
+  - **Build:** `lake build NiceTry` green — 1170 modules, all three
+    `#check_contract ok` (incl. both kernels with flipped flags).
 
 ## Sprint log (2026-06-12b) — M3 DONE: the tree loop is PROVED
 

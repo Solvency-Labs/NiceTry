@@ -12,27 +12,82 @@ Status snapshot (`agent/tree-loop-A2`, 2026-06-13):
   writes are proved in `Tree*.lean`.
 - **Pre-loop trace: fully closed.** `TreeEntryFront.lean` executes the hmsg front
   half, proves its transcript value, and composes through `LoopInv 0`.
-- **Open work: 12 `local_obligations`**, all `proofStatus := .assumed`, all at the
-  Verity→Yul boundary. A Verity `LocalObligation` is `{name, obligation: String,
-  proofStatus}` (`Compiler/CompilationModel/Types.lean:338`) — an **accounting flag,
-  not a checked proof term**. Discharging one = write a real Lean refinement lemma
-  against the EVMYulLean memory model, then flip `.assumed → .proved`.
+- **9 of 11 obligations discharged (2026-06-13).** All keccak-transcript memory
+  obligations (#1–#5, #7, #8) and both Class-A calldata obligations (#6, #11) are
+  now `proved`, each backed by a real Lean theorem: leaf/node/address by
+  `kernel_*_keccak_memory_refinement` and the ABI parse by
+  `kernel_recover_abi_parse` (new, in `Bridge/KernelRefinement.lean`); hmsg/roots
+  by `hmsg_derivation_eq_overwrite` / `roots_derivation_eq_from_buffer` and the
+  `rawWord` reads by `masked_calldataload_read16` (+ `_counter_`) (existing
+  `AddressShape.lean` / `TreeCalldata.lean` lemmas that already match the kernel
+  verbatim). Axiom audit on the new theorems: only the documented `evm_keccak_*`,
+  `uint256_toByteArray_{size,roundtrip}`, `ffi_zeroes_eq_empty`, + Lean core; no
+  `sorry`.
+- **Held boundary: 2 remaining `local_obligations`** (`proofStatus := .assumed`):
+  `full_verifier_memory_refinement` (#9) and `full_raw_verifier_memory_refinement`
+  (#10) — Class-C loop choreography on the auxiliary Verity kernel. The equivalent
+  choreography is **already proven for the deployed contract** (`tree_loop_run` +
+  `Phase4Accept`, inside `phase4_forsRefines`); discharging the kernel copies would
+  duplicate that whole induction for a reference artifact. **Decision: held as a
+  documented boundary** (see the table notes below for the full rationale and
+  cross-references). A Verity `LocalObligation` is `{name, obligation: String,
+  proofStatus}` (`Compiler/CompilationModel/Types.lean:247`) — an **accounting
+  flag, not a checked proof term**: the macro never inspects a proof. Discharging
+  one honestly = write a real Lean refinement lemma and cite it in the
+  justification, then flip `.assumed → .proved`.
 
 ## The 12 obligations
 
-| # | Site | Name | Claim |
-|---|------|------|-------|
-| 1 | `Verity/TreeKeccakKernel.lean:46` | `keccak_memory_refinement` | leaf: `mem[0x380..0x3df] = pkSeed‖ADRS‖sk`, top-16 masking |
-| 2 | `Verity/TreeKeccakKernel.lean:59` | `keccak_memory_refinement` | node: `mem[0x380..0x3ff] = pkSeed‖ADRS‖left‖right` |
-| 3 | `Verity/FullVerifierKernel.lean:50` | `hmsg_keccak_memory_refinement` | `mem[0x00..0x9f] = pkSeed‖R‖digest‖dom_FORS‖counter` |
-| 4 | `Verity/FullVerifierKernel.lean:78` | `keccak_memory_refinement` | leaf transcript (= #1) |
-| 5 | `Verity/FullVerifierKernel.lean:91` | `keccak_memory_refinement` | node transcript (= #2) |
-| 6 | `Verity/FullVerifierKernel.lean:135` | `raw_calldata_refinement` | `sigData` → first payload byte; `byteOffset` ∈ FORS layout offsets |
-| 7 | `Verity/FullVerifierKernel.lean:141` | `roots_keccak_memory_refinement` | `mem[0x00..0x35f] = pkSeed‖ADRS_roots‖root_0..root_24` |
-| 8 | `Verity/FullVerifierKernel.lean:149` | `address_keccak_memory_refinement` | `mem[0x00..0x3f] = pkSeed‖pkRoot` |
-| 9 | `Verity/FullVerifierKernel.lean:160` | `full_verifier_memory_refinement` | typed choreography: preserves pkSeed, writes 25 roots at `0x40+32·t`, scratch ≥ `0x380` |
-| 10 | `Verity/FullVerifierKernel.lean:199` | `full_raw_verifier_memory_refinement` | raw choreography (= #9 from decoded raw) |
-| 11 | `Verity/FullVerifierKernel.lean:230` | `raw_abi_parse_refinement` | ABI reads = `recover(bytes,bytes32)`: `cd[4]`=offset, `cd[4+off]`=len, `cd[4+off+32]`=data |
+| # | Site | Name | Claim | Status |
+|---|------|------|-------|--------|
+| 1 | `Verity/TreeKeccakKernel.lean:46` | `keccak_memory_refinement` | leaf: `mem[0x380..0x3df] = pkSeed‖ADRS‖sk`, top-16 masking | ✅ `proved` — `kernel_leaf_keccak_memory_refinement` |
+| 2 | `Verity/TreeKeccakKernel.lean:59` | `keccak_memory_refinement` | node: `mem[0x380..0x3ff] = pkSeed‖ADRS‖left‖right` | ✅ `proved` — `kernel_node_keccak_memory_refinement` |
+| 3 | `Verity/FullVerifierKernel.lean:50` | `hmsg_keccak_memory_refinement` | `mem[0x00..0x9f] = pkSeed‖R‖digest‖dom_FORS‖counter` | ✅ `proved` — `hmsg_derivation_eq_overwrite` |
+| 4 | `Verity/FullVerifierKernel.lean:78` | `keccak_memory_refinement` | leaf transcript (= #1) | ✅ `proved` — `kernel_leaf_keccak_memory_refinement` |
+| 5 | `Verity/FullVerifierKernel.lean:91` | `keccak_memory_refinement` | node transcript (= #2) | ✅ `proved` — `kernel_node_keccak_memory_refinement` |
+| 6 | `Verity/FullVerifierKernel.lean:135` | `raw_calldata_refinement` | `sigData` → first payload byte; `byteOffset` ∈ FORS layout offsets | ✅ `proved` — `masked_calldataload_read16` (+ `_counter_`) |
+| 7 | `Verity/FullVerifierKernel.lean:141` | `roots_keccak_memory_refinement` | `mem[0x00..0x35f] = pkSeed‖ADRS_roots‖root_0..root_24` | ✅ `proved` — `roots_derivation_eq_from_buffer` |
+| 8 | `Verity/FullVerifierKernel.lean:149` | `address_keccak_memory_refinement` | `mem[0x00..0x3f] = pkSeed‖pkRoot` | ✅ `proved` — `kernel_address_keccak_memory_refinement` |
+| 9 | `Verity/FullVerifierKernel.lean:160` | `full_verifier_memory_refinement` | typed choreography: preserves pkSeed, writes 25 roots at `0x40+32·t`, scratch ≥ `0x380` | ⬜ assumed — Class-C (loop exec) |
+| 10 | `Verity/FullVerifierKernel.lean:199` | `full_raw_verifier_memory_refinement` | raw choreography (= #9 from decoded raw) | ⬜ assumed — Class-C (loop exec) |
+| 11 | `Verity/FullVerifierKernel.lean:230` | `raw_abi_parse_refinement` | ABI reads = `recover(bytes,bytes32)`: `cd[4]`=offset, `cd[4+off]`=len, `cd[4+off+32]`=data | ✅ `proved` — `kernel_recover_abi_parse` |
+
+**9 of 11 discharged** (#1–#8, #11): all keccak-transcript memory obligations
+(#1–#5, #7, #8) plus both Class-A calldata obligations (#6 via
+`masked_calldataload_read16`/`_counter_`, #11 via `kernel_recover_abi_parse`).
+
+**The remaining 2 (#9, #10) are held as a documented boundary — deliberately,
+not for lack of a proof of the algorithm.** They assert the kernel `forEach`
+loop's *executed* memory behaviour — pkSeed preserved, 25 roots written at
+`0x40+32·t`, scratch non-overlap, and roots = the recovered values (composing the
+per-tree leaf/node facts 25× over 6 levels). These are not closed
+`mstore`/`calldataload` facts, so the MachineState memory-region template does not
+apply.
+
+The equivalent proof **already exists, complete, for the deployed contract**
+(`forsVerifierRuntime`) — the artifact `phase4_forsRefines` actually certifies:
+
+- `TreeLoop.lean:572` `tree_loop_run` / `:667` `tree_loop_run_from_zero` — the
+  25-iteration loop induction: all 25 root slots hold the `loopRootV` hash-chain
+  values, memory below `0x40` (pkSeed) untouched.
+- `Phase4Accept.lean:178,217` — feeds that into
+  `compressRoots_eq_recoverRoot` → `recoverRoot` → `addressFromRoot`.
+
+The Verity kernels are a **separate, auxiliary artifact** (generated reference
+Yul, exercised by Foundry replay/diff tests — see `README.md` "Branch Recap"
+layer 3 and "What Is Not Covered"). Discharging #9/#10 would mean **re-deriving
+the entire `TreeLoop` induction for the kernel's differently-generated Yul** — a
+multi-week duplication of an already-complete proof, on an artifact that is not
+the deployed bytecode. `tree_loop_run` is not reusable here: it runs the deployed
+contract's specific Yul body through the EVMYulLean interpreter. The one shortcut
+(prove kernel-Yul ≡ `forsVerifierRuntime`) is itself an explicitly-uncovered
+boundary (`README.md`: "No proof that the optimized inline-assembly Solidity
+verifier is equivalent … to the generated Verity Yul artifact").
+
+**Decision (2026-06-13):** hold #9/#10 as `.assumed`. The cost (weeks of
+duplicate proof) is not justified for a reference artifact when the choreography
+is already proven for the deployed contract. To revisit, the real task is a
+kernel loop-execution model (the kernel analogue of `TreeLoop.lean`).
 
 (11 named sites; #4/#5 duplicate #1/#2's transcript shape, so the table reads as the
 12 `local_obligations` grep count with one shape shared.)

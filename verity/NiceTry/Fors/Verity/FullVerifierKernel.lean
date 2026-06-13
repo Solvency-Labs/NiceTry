@@ -47,7 +47,7 @@ verity_contract ForsFullVerifierKernel where
 
   function hMsg
       (pkSeed : Uint256, r : Uint256, digest : Uint256, counter : Uint256)
-      local_obligations [hmsg_keccak_memory_refinement := assumed "Prove that memory 0x00..0x9f is exactly pkSeed||R||digest||dom_FORS||counter before Hmsg keccak."]
+      local_obligations [hmsg_keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.hmsg_derivation_eq_overwrite: over the exact hmsg mstore chain (0x00=pkSeed, 0x20=R, 0x40=digest, 0x60=dom_FORS, 0x80=counter) the keccak256(0x00,0xa0) input window equals the hmsg transcript pkSeed||R||digest||dom_FORS||counter and equals the model hMsg, given dom_FORS.toNat = ForsDomainWord (the kernel's 0xFF..FD literal) and a 0xa0-sized memory. Keccak remains the documented evm_keccak_hmsg trust boundary."]
       : Uint256 := do
     unsafe "Hmsg uses explicit EVM memory transcript" do
       mstore 0x00 pkSeed
@@ -75,7 +75,7 @@ verity_contract ForsFullVerifierKernel where
 
   function leafHash
       (pkSeed : Uint256, tree : Uint256, leafIdx : Uint256, sk : Uint256)
-      local_obligations [keccak_memory_refinement := assumed "Prove that the 0x380..0x3df memory writes are exactly the leaf transcript pkSeed||ADRS||sk and that masking keeps the top 16 bytes."]
+      local_obligations [keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_leaf_keccak_memory_refinement: over the exact leaf mstore chain (0x380=pkSeed, 0x3a0=adrs, 0x3c0=sk) the keccak256(0x380,0x60) input window equals the leaf transcript pkSeed||ADRS||sk and the top-16 masking yields the model leafHash, given the ADRS-word shape and scratch-sized memory. Keccak remains the documented evm_keccak_leaf trust boundary."]
       : Uint256 := do
     let adrs <- leafAdrs tree leafIdx
     unsafe "leaf hash uses explicit EVM memory transcript" do
@@ -88,7 +88,7 @@ verity_contract ForsFullVerifierKernel where
   function nodeHash
       (pkSeed : Uint256, tree : Uint256, height : Uint256, treeScale : Uint256,
        parentIdx : Uint256, left : Uint256, right : Uint256)
-      local_obligations [keccak_memory_refinement := assumed "Prove that the 0x380..0x3ff memory writes are exactly the node transcript pkSeed||ADRS||left||right and that masking keeps the top 16 bytes."]
+      local_obligations [keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_node_keccak_memory_refinement: over the exact node mstore chain (0x380=pkSeed, 0x3a0=adrs, 0x3c0=left, 0x3e0=right) the keccak256(0x380,0x80) input window equals the node transcript pkSeed||ADRS||left||right and the top-16 masking yields the model nodeHash, given the ADRS-word shape and scratch-sized memory. Keccak remains the documented evm_keccak_node trust boundary."]
       : Uint256 := do
     let adrs <- nodeAdrs tree height treeScale parentIdx
     unsafe "node hash uses explicit EVM memory transcript" do
@@ -132,13 +132,13 @@ verity_contract ForsFullVerifierKernel where
     return bitAnd value 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
 
   function rawWord (sigData : Uint256, byteOffset : Uint256)
-      local_obligations [raw_calldata_refinement := assumed "Prove that sigData points to the first byte of the ABI bytes payload and byteOffset is one of the FORS signature layout offsets."]
+      local_obligations [raw_calldata_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.masked_calldataload_read16 (payload fields) and masked_calldataload_counter_read16 (counter): with sigData = 100 (the payload base, established by raw_abi_parse_refinement) and any FORS field byteOffset (a multiple of 16, i.e. 16k or 2432), the masked read bitAnd(calldataload(sigData+byteOffset), NMask) recovers raw.read16(byteOffset), under RawSigWellFormed (part of ForsAbiInput). Calldataload is the documented EVMYulLean boundary."]
       : Uint256 := do
     let word := calldataload (add sigData byteOffset)
     return bitAnd word 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
 
   function allow_post_interaction_writes compressRoots (_pkSeed : Uint256)
-      local_obligations [roots_keccak_memory_refinement := assumed "Prove that memory 0x00..0x35f is exactly pkSeed||ADRS_roots||root_0..root_24 before roots compression."]
+      local_obligations [roots_keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.roots_derivation_eq_from_buffer: given a memory already holding pkSeed@0x00 and root_0..root_24 in [0x40,0x360) (the loop's responsibility, tracked by the choreography obligations), the kernel's mstore(0x20, ADRS_roots) + keccak256(0x00,0x360) input window equals pkSeed||ADRS_roots||root_0..root_24 and the top-16 masking equals the model compressRoots, given ADRS_roots.toNat = ForsRootsAdrsWord. Keccak remains the documented evm_keccak_roots trust boundary."]
       : Uint256 := do
     unsafe "roots compression uses explicit EVM memory transcript" do
       mstore 0x20 (shl 128 4)
@@ -146,7 +146,7 @@ verity_contract ForsFullVerifierKernel where
     return bitAnd digest 0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
 
   function addressFromRoot (pkSeed : Uint256, pkRoot : Uint256)
-      local_obligations [address_keccak_memory_refinement := assumed "Prove that memory 0x00..0x3f is exactly pkSeed||pkRoot before address derivation."]
+      local_obligations [address_keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_address_keccak_memory_refinement: over the exact address mstore chain (0x00=pkSeed, 0x20=pkRoot) on any 0x40-sized memory, the keccak256(0x00,0x40) input window equals pkSeed||pkRoot and the low-160 masking equals the model addressFromRoot. Keccak remains the documented evm_keccak_address trust boundary."]
       : Uint256 := do
     unsafe "address derivation uses explicit EVM memory transcript" do
       mstore 0x00 pkSeed
@@ -227,7 +227,7 @@ verity_contract ForsFullVerifierKernel where
 
   function allow_post_interaction_writes recover
       (_sig : Bytes, digest : Bytes32)
-      local_obligations [raw_abi_parse_refinement := assumed "Prove that the hardcoded ABI reads match recover(bytes,bytes32): calldata[4] is the bytes offset, calldata[4+offset] is sig.length, and calldata[4+offset+32] is sig.data."]
+      local_obligations [raw_abi_parse_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_recover_abi_parse: on recover(bytes,bytes32) ABI calldata (encodeForsCalldata raw digest), calldataload(4) = 0x40 (the bytes offset), calldataload(4+offset) = raw.len (sig.length), and calldataload(4+offset+32) is the first sig.data word. The calldataload is the documented EVMYulLean boundary the compiler maps the kernel's calldataload to verbatim."]
       : Address := do
     let sigOffset := calldataload 4
     let sigLenOffset := add 4 sigOffset

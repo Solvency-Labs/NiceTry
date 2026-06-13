@@ -43,7 +43,7 @@ verity_contract ForsTreeKeccakKernel where
 
   function leafHash
       (pkSeed : Uint256, tree : Uint256, leafIdx : Uint256, sk : Uint256)
-      local_obligations [keccak_memory_refinement := assumed "Prove that the 0x380..0x3df memory writes are exactly the leaf transcript pkSeed||ADRS||sk and that masking keeps the top 16 bytes."]
+      local_obligations [keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_leaf_keccak_memory_refinement: over the exact leaf mstore chain (0x380=pkSeed, 0x3a0=adrs, 0x3c0=sk) the keccak256(0x380,0x60) input window equals the leaf transcript pkSeed||ADRS||sk and the top-16 masking yields the model leafHash, given the ADRS-word shape and scratch-sized memory. Keccak remains the documented evm_keccak_leaf trust boundary."]
       : Uint256 := do
     let adrs <- leafAdrs tree leafIdx
     unsafe "leaf hash uses explicit EVM memory transcript" do
@@ -56,7 +56,7 @@ verity_contract ForsTreeKeccakKernel where
   function nodeHash
       (pkSeed : Uint256, tree : Uint256, height : Uint256, treeScale : Uint256,
        parentIdx : Uint256, left : Uint256, right : Uint256)
-      local_obligations [keccak_memory_refinement := assumed "Prove that the 0x380..0x3ff memory writes are exactly the node transcript pkSeed||ADRS||left||right and that masking keeps the top 16 bytes."]
+      local_obligations [keccak_memory_refinement := proved "Discharged in Lean by NiceTry.Fors.Bridge.kernel_node_keccak_memory_refinement: over the exact node mstore chain (0x380=pkSeed, 0x3a0=adrs, 0x3c0=left, 0x3e0=right) the keccak256(0x380,0x80) input window equals the node transcript pkSeed||ADRS||left||right and the top-16 masking yields the model nodeHash, given the ADRS-word shape and scratch-sized memory. Keccak remains the documented evm_keccak_node trust boundary."]
       : Uint256 := do
     let adrs <- nodeAdrs tree height treeScale parentIdx
     unsafe "node hash uses explicit EVM memory transcript" do
