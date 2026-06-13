@@ -1,5 +1,47 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
+## Current checkpoint (2026-06-13) — pre-loop back-half + LoopInv 0 landed
+
+- **Tree loop:** complete. `TreeLoop.lean` proves all 25 iterations and root-buffer writes.
+- **Calldata Parts A-C:** complete. `TreeCalldata.lean` has general payload extraction,
+  masked-load-to-`read16` glue, `RawSigWellFormed`, and `loopSk`/`loopSib` (`loopSk_read16`,
+  `loopSib_read16` connect them to `treeOffset`/`authOffset` under `RawSigWellFormed`).
+- **Post-loop:** complete. `TreeFinal.lean` contains roots compression, address derivation,
+  and return-side machinery.
+- **Pre-loop support:** complete. `TreePreLoop.lean` proves the padding `mstore` calculus
+  (`byteArray_write_pad`, `mstore_pad_{size,extract_self,extract_below}`) and the five-word
+  hmsg keccak window (`hmsg_read_of_extracts`, `hmsg_derivation_of_extracts`).
+- **Pre-loop back-half:** complete. `TreeEntry.lean` proves `hmsg_window_after_5` (the five
+  hmsg stores over a 96-byte entry → the [0,0xa0) window + size) and
+  `exec_recover_tail_to_loopInv` (`body[25:32]`: forced-zero skip + `mstore(0x380,pkSeed)` +
+  5 loop-var inits → `LoopInv 0` at `ptr0=132`, the input `tree_loop_run_from_zero` wants).
+- **Exact stopping point:** the FRONT-half `fun_recover.body[18:24]` exec trace is not yet
+  written — the let `usr_pkSeed`, the five hmsg `mstore`s (apply `hmsg_window_after_5`), and
+  the `usr_dVal := keccak256(0,0xa0)` let (apply `hmsg_derivation_of_extracts`). It must
+  produce the post-keccak `.Ok ss vs` state with `usr_dVal` bound + memory size `0xa0` that
+  `exec_recover_tail_to_loopInv` consumes. Entry: `recoverAfterRet3FromRet2` (ClassARecover),
+  whose machine memory is `empty.mstore(64,0x80)` (size 96) — `hmsg_window_after_5`'s shape.
+  NOTE: `runForsRecover` enters `fun_recover` from `forsInitialState` with EMPTY memory
+  (`initcall` resets only the var-store, preserves `sharedState`/memory); the dispatcher's
+  `mstore(64,0x80)` is only present on the ClassARecover entry. Both differ only below 0xa0,
+  which the five hmsg stores overwrite — so `hmsg_window_after_5` works for either with the
+  right entry-size argument (96 for the ClassARecover trace).
+- **After the front-half:** compose front + `exec_recover_tail_to_loopInv` +
+  `tree_loop_run_from_zero` + `post_loop_trace` through `call`/`runForsRecover` into
+  `h_accept`; discharge the `hfz` (forced-zero=0) hypothesis from `forcedZero (dValOf)=true`
+  via the keccak derivation + read16↔decodeTyped glue; connect `loopRootV` to `recoverRoot`
+  through `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`; then
+  `h_len`/`h_guard`, remove `dispatcher_routes_to_recover`, flip the 12 obligations.
+- **GOTCHA (GetElem on string literals):** `state[("foo":Identifier)]!` FAILS GetElem
+  synthesis (`GetElem? Yul.State String ?m ?m`). Use a `def fooId : Identifier := "foo"`
+  index (like `retId`) OR phrase via `EvmYul.Yul.State.lookup! "foo" s` (a plain arg).
+  Reads coming OUT of `exec` (from `.Var` AST nodes) synth fine. To peel an `mstore`/`insert`
+  chain after `ok_set_eq`, note State.insert is NOT reducibly unfolded by `rw`, so
+  `state_getElem_finsert_ne` (Finmap form) won't match a `State.insert` chain — use a `show`
+  to the collapsed `Ok a (vs.insert ...)` form (defeq by rfl) first. `exec_let_lit` produces
+  `vars.head!` keys; clean with `simp only [List.head!_cons]`.
+- **Build:** `lake build NiceTry` passes all 1165 modules on `agent/tree-loop-A2`.
+
 ## Trust surface (12 labeled axioms — `#print axioms` shows only these + Lean core)
 
 None are hardness assumptions. Verify with `#print axioms <thm>`.
@@ -529,11 +571,10 @@ discharge plan) and [`CLASS-M.md`](./CLASS-M.md) (the EVM↔model memory finding
   ```bash
   git remote add solvency https://github.com/Solvency-Labs/NiceTry.git   # if missing
   git fetch solvency
-  git checkout -B evmrun-runtime --track solvency/evmrun-runtime
+  git checkout -B agent/tree-loop-A2 --track solvency/agent/tree-loop-A2
   ```
-- **Branch:** `evmrun-runtime` — has `evmRun` + the runtime transcription on top of
-  the merged Codex shape work. (`fors-verity-model` is the model+shape base;
-  `codex/fors-overwrite-shapes` is the shape-only Codex workstream.)
+- **Branch:** current development is on `agent/tree-loop-A2`, which contains the
+  completed tree loop and M4 assembly support ahead of `evmrun-runtime`.
 - **Path:** all Lean is under `verity/NiceTry/Fors/`; the EVM bridge is in
   `verity/NiceTry/Fors/Bridge/`.
 
@@ -555,8 +596,8 @@ Dependencies are pinned in `lakefile.lean` (`verity@bd211c5`, which pulls
 
 ## 2. What is DONE — do not redo this
 
-All of the following is committed on `evmrun-runtime`, **`sorry`/`admit`-free**,
-with trust localized to **10 labeled axioms** on this branch (verify with
+All of the following is committed on `agent/tree-loop-A2`, **`sorry`/`admit`-free**,
+with trust localized to **12 labeled axioms** on this branch (verify with
 `#print axioms`):
 
 | Area | File | Status |
@@ -571,11 +612,11 @@ with trust localized to **10 labeled axioms** on this branch (verify with
 | Trusted FFI specs (memory padding + keccak) | `Bridge/EvmFfiSpec.lean` | ✅ 5 axioms (3 `ffi_zeroes_*` + `uint256_toByteArray_size` + `uint256_toByteArray_roundtrip`) |
 | SoLean oracle discharge + sufficiency | `Bridge/Oracle.lean`, `Bridge/Equivalence.lean` | ✅ `refinement_discharges_oracle`, `refinement_matches_forsAccept` |
 
-**The 10 trust-base axioms on this branch:** `evm_keccak_{address,hmsg,leaf,node,roots}`
+**The 12 trust-base axioms on this branch:** `evm_keccak_{address,hmsg,leaf,node,roots}`
 (`AddressShape.lean`) + `ffi_zeroes_{size,get!,eq_empty}` + `uint256_toByteArray_size`
-and `uint256_toByteArray_roundtrip` (`EvmFfiSpec.lean`). The round-trip axiom is
-the Class-A codec fact planned in WS-1; it mirrors EVMYulLean's private
-`fromBytes'_toBytes'` proof.
+and `uint256_toByteArray_roundtrip` (`EvmFfiSpec.lean`) + `ffi_kec_lt`
+(`InterpKeccak.lean`) + `dispatcher_routes_to_recover` (`EvmRunRecover.lean`).
+The last item is a temporary interpreter-routing assumption, not a cryptographic one.
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
 > The contract-execution spine connecting those steps is **not yet assembled**.
@@ -588,15 +629,11 @@ Everything reduces to: **connect the interpreter actually running
 decomposition (`EvmRun.lean` lines 64-87, `Equivalence.lean` lines 55-96). Four
 independently-claimable workstreams:
 
-### WS-1 · Class-A: ABI calldata parse  — *smallest, good first task*
-Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
-`fun_recover` with the right `offset/length/digest`, and that `fun_recover`'s
-`calldataload` field reads equal `raw.read16` / `decodeRaw`; bad length →
-`address(0)` (discharges `Refinement.lean`'s `h_len` + `h_guard`).
-- Entry targets (named, not yet proved): `decodeTyped_reads_raw_header`,
-  `decodeOpening_reads_raw_fields`, `rawOpenings_treeOpening_eq_decodeTyped_opening`.
-- Obligations #6, #11 in `OBLIGATIONS.md`.
-- **Foundation in place (interpreter-reasoning layer):**
+### WS-1 · Class-A / reject paths
+The ABI byte library and good-length dispatcher trace are proved. Remaining:
+assemble the bad-length and forced-zero executions into `h_len` and `h_guard`,
+then connect them through the dispatcher boundary.
+- **Foundation in place:**
   - `Bridge/Interp.lean` — one-step `exec` reductions (Block/If/Leave/Break/Continue/
     out-of-fuel) + `eval` base cases (Lit/Var/evalArgs-nil). Recipe:
     `conv_lhs => rw [exec]` then `rw [h]`.
@@ -627,40 +664,22 @@ Prove `runForsCalldata (encodeForsCalldata raw digest)` routes the dispatcher to
   - **The interpreter-stepping foundation is now COMPLETE** — every construct in
     `forsDispatcher` + `fun_recover` (control flow, all 14 pure builtins, all 7
     stateful ops, user-calls, switch, expression composition) has a reduction lemma.
-  - **The one remaining brick for `h_len` — a `calldataload` byte-reasoning library
-    (sizeable, ~`EvmMemory.lean` scale):**
-    1. `ByteArray.readBytes` reduction — it routes through `copySlice` + the opaque
-       `ffi.ByteArray.zeroes` (use the `EvmFfiSpec` `ffi_zeroes_*` specs).
-    2. word round-trip `uInt256OfByteArray (UInt256.ofNat n).toByteArray = n` (for
-       `n < 2^256`) — EVMYulLean's `fromBytes'_toBytes'` is `private`, so this likely
-       becomes a trust axiom mirroring `uint256_toByteArray_size`, or a from-scratch
-       proof.
-    3. `readBytes` over `encodeForsCalldata`'s nested `++` (`selector ‖ 0x40 ‖ digest
-       ‖ len ‖ payload`) with offset/size arithmetic ⇒ `calldataload 4 = 0x40`,
-       `calldataload 0x44 = raw.len`, `calldataload 36 = digest`, `shr 224 (calldataload 0)
-       = selector`, `calldatasize = 2548`; connects to the proved model-side `decodeTyped_*`.
-    4. Assemble the dispatcher trace + `fun_recover` length check into `h_len`
-       (mechanical once 1–3 exist, using the now-complete stepping foundation).
-    `h_guard` additionally needs the **hmsg keccak bridge** (Class-M): the contract's
-    `dVal = keccak256(0,0xa0)` and `forcedZero` check (`forcedZero_eq_evm_shape`).
+  - `CalldataBytes.lean`, `ClassA*.lean`, and `TreeCalldata.lean` now cover the
+    calldata layout, dispatcher words, masked header/payload reads, and model-opening
+    values. Do not rebuild this layer.
 
-### WS-2 · Class-M execution wiring  — *mechanical, template exists*
-The `*_derivation_eq_overwrite` lemmas in `AddressShape.lean` assume a
-`MachineState` whose memory already satisfies the shape hypotheses (e.g.
-`m.memory.data.extract 0 32 = pkSeed.toByteArray.data`). Open work: show the **real
-interpreter execution up to each keccak** produces such a state. address is the
-done template; hmsg / leaf / node follow it.
+### WS-2 · M4 execution assembly  — **current frontier**
+`TreePreLoop.lean` proves the memory calculus and hmsg-window value theorem, but
+not yet the execution of statements 18–31. Prove that trace to establish
+`LoopInv 0`, run `tree_loop_run_from_zero`, then compose with `TreeFinal.lean`
+to close `h_accept`.
 
-### WS-3 · The FORS tree loop  — *the multi-week long pole*
-Induct over the interpreter executing `for { } lt(usr_t,25) { … }` in
-`fun_recover`, threading `MachineState`, to produce the per-tree
-`leaf / node1..5 / root` values and **discharge the `hleaf / hnode1..5 / hroot`
-premises** of
-`roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init`. Use the
-prefix invariant `roots_loop_buffer_prefix_after_init` and the
-`node_derivation_eq_climbLevel_{even,odd}_overwrite` sibling-ordering lemmas. This
-is the genuine core; the *destination* lemmas exist, the *execution → premises*
-bridge does not.
+### WS-3 · The FORS tree loop  — ✅ **DONE**
+`TreeLeaf.lean` through `TreeLoop.lean` prove the real loop end to end: execution
+of all six hashes per iteration, the invariant and arithmetic, 25-step induction,
+and all root-buffer writes. `TreeCalldata.lean` supplies the model-opening values.
+Do not reimplement the induction. The remaining work is M4 composition around it:
+the pre-loop statement trace and final `h_accept` assembly.
 
 ### WS-4 · Assemble `RefinesModel evmRun`  — ✅ **DONE** (`Bridge/Refinement.lean`)
 `forsRefines_of_branches` reduces `ForsRefines` to exactly three interpreter-run
@@ -679,19 +698,20 @@ Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
 
 ---
 
-## 4. Suggested grab order by time available
-- **An hour:** WS-1 (ABI parse) or one shape of WS-2 (hmsg/leaf/node) — bounded.
-- **A focused week+:** WS-3 (the loop). One owner — it overlaps WS-2/WS-4; diverging
-  copies of the loop induction will hurt.
-- **Glue:** WS-4 statement first (unblocks parallel work), proof last.
+## 4. Suggested grab order
+- **First:** finish the pre-loop statement trace (`fun_recover.body[18:32]`).
+- **Second:** compose the proved pre-loop, loop, calldata, and post-loop results into
+  `h_accept`.
+- **Then:** close `h_len`/`h_guard`, remove the dispatcher-routing axiom, and flip
+  the 12 accounting obligations.
 
 ## 5. Build status of this branch
-- **`lake build NiceTry` — verified green (2026-06-04):** 1134/1134 modules built,
-  all 9 Bridge oleans produced, no errors/warnings, and the three
+- **`lake build NiceTry` — verified green (2026-06-13):** 1164 modules built,
+  no errors, and the three
   `#check_contract ok` for the Verity kernels.
 - **Axiom audit (`#print axioms`) — clean:** no `sorryAx` anywhere. The bridge
   theorems depend only on Lean's `propext / Classical.choice / Quot.sound` plus the
-  labeled trust axioms (`evm_keccak_*`, `ffi_zeroes_*`, `uint256_toByteArray_size`).
+  12 labeled trust axioms listed at the top of this file.
   The sufficiency theorem `refinement_discharges_oracle` is pure logic (`[propext]`).
 - Reminder: a bare `lake build` (no target) compiles nothing and still exits 0 — see
   §1. Always build `NiceTry` and re-run the axiom audit after touching the Bridge.
