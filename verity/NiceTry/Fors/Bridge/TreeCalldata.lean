@@ -365,6 +365,71 @@ theorem masked_calldataload_read16 (raw : RawSig) (digest : Digest)
     nat_and_high128 _ _ hq hr,
     Nat.mul_div_cancel' (Nat.dvd_of_mod_eq_zero hlow)]
 
+/-- The final counter chunk is followed by ABI zero padding, so it cannot use the
+    paired-payload lemma (`k + 2 ≤ 153` would fail at `k = 152`). The same
+    high-128-bit mask still recovers the packed final `read16` word. -/
+theorem masked_calldataload_counter_read16 (raw : RawSig) (digest : Digest)
+    (s : EvmYul.State .Yul)
+    (hcd : s.executionEnv.calldata = encodeForsCalldata raw digest)
+    (hlow : raw.read16 2432 % 2 ^ 128 = 0)
+    (hlt : raw.read16 2432 < 2 ^ 256) :
+    ((EvmYul.State.calldataload s (UInt256.ofNat 2532)).land
+        (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = raw.read16 2432 := by
+  let z : USize :=
+    { toBitVec := (↑32 - ↑16 : BitVec System.Platform.numBits) }
+  have husz : UInt256.size = 2 ^ 256 := by decide
+  rw [calldataload_encode_counter raw digest s hcd]
+  change ((EvmYul.uInt256OfByteArray (forsPayloadChunk raw 152 ++ ffi.ByteArray.zeroes z)).land
+      (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat = raw.read16 2432
+  rw [uint256_land_toNat]
+  have hmask : ((UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
+      = 2 ^ 256 - 2 ^ 128 := by
+    rw [show (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot
+        = UInt256.ofNat
+            0xffffffffffffffffffffffffffffffff00000000000000000000000000000000
+      from rfl]
+    rw [uint256_ofNat_toNat_of_lt _ (by rw [husz]; norm_num)]
+    norm_num
+  have hq : raw.read16 2432 / 2 ^ 128 < 2 ^ 128 :=
+    Nat.div_lt_of_lt_mul (by
+      have h3 : (2 : Nat) ^ 128 * 2 ^ 128 = 2 ^ 256 := by rw [← pow_add]
+      omega)
+  have hchk : fromByteArrayBigEndian (forsPayloadChunk raw 152)
+      = raw.read16 2432 / 2 ^ 128 := by
+    rw [show forsPayloadChunk raw 152
+        = (UInt256.ofNat (raw.read16 (16 * 152))).toByteArray.extract 0 16 from rfl]
+    rw [(toByteArray_halves (UInt256.ofNat (raw.read16 (16 * 152)))).1]
+    rw [show 16 * 152 = 2432 from by norm_num]
+    rw [uint256_ofNat_toNat_of_lt _ (by rw [husz]; exact hlt)]
+  have hpadSize : (ffi.ByteArray.zeroes z).size = 16 := by
+    dsimp [z]
+    rw [ffi_zeroes_size]
+    change ((BitVec.ofNat System.Platform.numBits 32) -
+      (BitVec.ofNat System.Platform.numBits 16)).toNat = 16
+    rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    rcases System.Platform.numBits_eq with hb | hb
+    · rw [hb]
+    · rw [hb]
+  have hr : fromByteArrayBigEndian (ffi.ByteArray.zeroes z) < 2 ^ 128 := by
+    have h := fromBE_lt (ffi.ByteArray.zeroes z)
+    rw [hpadSize] at h
+    norm_num at h
+    exact h
+  have hcat : fromByteArrayBigEndian
+        (forsPayloadChunk raw 152 ++ ffi.ByteArray.zeroes z)
+      = raw.read16 2432 / 2 ^ 128 * 2 ^ 128
+        + fromByteArrayBigEndian (ffi.ByteArray.zeroes z) := by
+    rw [fromBE_append, hpadSize, hchk]
+  rw [uInt256OfByteArray_toNat _ (by
+    rw [hcat]
+    exact high_low_lt _ _ hq hr)]
+  rw [hcat, hmask,
+    show raw.read16 2432 / 2 ^ 128 * 2 ^ 128
+      = 2 ^ 128 * (raw.read16 2432 / 2 ^ 128) from by ring,
+    nat_and_high128 _ _ hq hr,
+    Nat.mul_div_cancel' (Nat.dvd_of_mod_eq_zero hlow)]
+
 /-- The loop's masked sibling/sk read, phrased via `treeMaskedCalldataWord`. -/
 theorem treeMaskedCalldataWord_read16 (raw : RawSig) (digest : Digest)
     (s : EvmYul.Yul.State) (k : Nat) (hk : k + 2 ≤ 153)

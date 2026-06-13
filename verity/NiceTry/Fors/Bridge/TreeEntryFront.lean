@@ -188,6 +188,86 @@ theorem recoverHmsgDomainWord_toNat :
     recoverHmsgDomainWord.toNat = ForsDomainWord := by
   rfl
 
+/-! ## Hmsg word/value identities -/
+
+theorem recoverHmsgPkWord_toNat_of_wellFormed
+    (raw : RawSig) (digest : Digest)
+    (hwf : RawSigWellFormed raw) :
+    (recoverHmsgPkWord raw digest).toNat = (decodeTyped raw).pkSeed := by
+  obtain ⟨hlow, hlt⟩ := hwf 1 (by omega)
+  have hoff :
+      (recoverAfterRet3FromRet2 raw digest)[hmsgSigOffsetId]! = UInt256.ofNat 100 := by
+    rfl
+  unfold recoverHmsgPkWord
+  change ((EvmYul.State.calldataload (recoverAfterRet3FromRet2 raw digest).toState
+      (((recoverAfterRet3FromRet2 raw digest)[hmsgSigOffsetId]!).add (UInt256.ofNat 0x10))).land
+        hmsgMask16.lnot).toNat = (decodeTyped raw).pkSeed
+  rw [hoff]
+  change ((EvmYul.State.calldataload (recoverAfterRet3FromRet2 raw digest).toState
+      ((UInt256.ofNat 100).add (UInt256.ofNat 0x10))).land
+        (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat =
+    (decodeTyped raw).pkSeed
+  rw [show (UInt256.ofNat 100).add (UInt256.ofNat 0x10) =
+      UInt256.ofNat (100 + 16 * 1) from rfl]
+  rw [show (decodeTyped raw).pkSeed = raw.read16 (16 * 1) from rfl]
+  exact masked_calldataload_read16 raw digest (recoverAfterRet3FromRet2 raw digest).toState
+    1 (by omega) (recoverAfterRet3FromRet2_toState_calldata raw digest) hlow hlt
+
+theorem recoverHmsgRWord_toNat_of_wellFormed
+    (raw : RawSig) (digest : Digest)
+    (hwf : RawSigWellFormed raw) :
+    (recoverHmsgRWord raw digest).toNat = (decodeTyped raw).r := by
+  obtain ⟨hlow, hlt⟩ := hwf 0 (by omega)
+  have hoff :
+      (recoverHmsgAfterStore0 raw digest)[hmsgSigOffsetId]! = UInt256.ofNat 100 := by
+    rfl
+  unfold recoverHmsgRWord
+  change (treeMaskedCalldataWord (recoverHmsgAfterStore0 raw digest)
+      ((recoverHmsgAfterStore0 raw digest)[hmsgSigOffsetId]!)).toNat =
+    (decodeTyped raw).r
+  rw [hoff]
+  rw [show (decodeTyped raw).r = raw.read16 (16 * 0) from rfl]
+  exact treeMaskedCalldataWord_read16 raw digest (recoverHmsgAfterStore0 raw digest)
+    0 (by omega) (by rfl) hlow hlt
+
+theorem recoverHmsgDigestWord_eq (raw : RawSig) (digest : Digest) :
+    recoverHmsgDigestWord raw digest = UInt256.ofNat digest := by
+  rfl
+
+theorem recoverHmsgDigestWord_toNat_of_lt
+    (raw : RawSig) (digest : Digest)
+    (hdigest : digest < UInt256.size) :
+    (recoverHmsgDigestWord raw digest).toNat = digest := by
+  rw [recoverHmsgDigestWord_eq]
+  exact uint256_ofNat_toNat_of_lt _ hdigest
+
+theorem recoverHmsgCounterWord_toNat_of_wellFormed
+    (raw : RawSig) (digest : Digest)
+    (hwf : RawSigWellFormed raw) :
+    (recoverHmsgCounterWord raw digest).toNat = (decodeTyped raw).counter := by
+  obtain ⟨hlow, hlt⟩ := hwf 152 (by omega)
+  have hoff :
+      (recoverHmsgAfterStore96 raw digest)[hmsgSigOffsetId]! = UInt256.ofNat 100 := by
+    rfl
+  have hprod :
+      (recoverHmsgAfterStore96 raw digest)[hmsgProductId]! = UInt256.ofNat 2400 := by
+    rfl
+  have hret :
+      (recoverHmsgAfterStore96 raw digest)[hmsgRetId]! = UInt256.ofNat 0x20 := by
+    rfl
+  unfold recoverHmsgCounterWord recoverHmsgCounterOffset
+  change (treeMaskedCalldataWord (recoverHmsgAfterStore96 raw digest)
+      ((((recoverHmsgAfterStore96 raw digest)[hmsgSigOffsetId]!).add
+        ((recoverHmsgAfterStore96 raw digest)[hmsgProductId]!)).add
+        ((recoverHmsgAfterStore96 raw digest)[hmsgRetId]!))).toNat =
+    (decodeTyped raw).counter
+  rw [hoff, hprod, hret]
+  rw [show ((UInt256.ofNat 100).add (UInt256.ofNat 2400)).add (UInt256.ofNat 0x20) =
+      UInt256.ofNat 2532 from rfl]
+  rw [show (decodeTyped raw).counter = raw.read16 2432 from rfl]
+  exact masked_calldataload_counter_read16 raw digest (recoverHmsgAfterStore96 raw digest).toState
+    (by rfl) hlow hlt
+
 /-- The interpreter's hmsg word is the model hMsg over the five stored words. -/
 theorem recoverHmsgDVal_toNat (raw : RawSig) (digest : Digest) :
     (recoverHmsgDVal raw digest).toNat =
