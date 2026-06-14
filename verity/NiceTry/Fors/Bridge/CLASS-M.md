@@ -27,17 +27,19 @@ ffi.KEC(readWithPadding  →  keccakWordFromMemory     →  keccakWord
 Plan must close **both** A and B, then compose with the proved
 `legit_raw_signature_recovers_expected_address`.
 
-## Finding 2 — the EVM memory model is not kernel-reducible
+## Finding 2 — the extern boundary is smaller than first believed
 
 `mstore` → `writeWord` → `ByteArray.write`, and `UInt256.toByteArray`, both call
-`ffi.ByteArray.zeroes : USize → ByteArray`, which is `@[extern] opaque` (no body).
-`ffi.KEC` likewise. EVMYulLean ships **zero** lemmas about memory/`ByteArray.write`/
-`readWithPadding` and has no Proofs dir. So Gap-A byte reasoning is from scratch on
-top of a trusted spec for the opaque primitives.
+`ffi.ByteArray.zeroes : USize → ByteArray`. It is `@[extern]`, but unlike
+`ffi.KEC` it also has a reducible Lean body (`Array.replicate`), so its size,
+contents, and empty-array behavior are kernel-provable. The same is true of the
+word codec once EVMYulLean's private encoder-length theorem is applied by its
+generated declaration name. `EvmFfiSpec.lean` now proves all five former
+padding/codec axioms.
 
-Minimal trusted layer (`EvmFfiSpec.lean`, built): `ffi_zeroes_size`,
-`ffi_zeroes_get!`, `ffi_zeroes_eq_empty`. Total-correctness specs of memory
-padding, not crypto. Plus trusted `ffi.KEC` (keccak).
+The remaining extern boundary is `ffi.KEC`: `InterpKeccak.lean` assumes only
+that it returns 32 bytes (`ffi_kec_size`) and proves the decoded `< 2²⁵⁶` bound
+from EVMYulLean's public decoder theorem.
 
 Current Bridge shape status: Gap-A byte equality is proved for address, hmsg,
 leaf, node, and the roots-compression buffer (with abstract per-tree root
@@ -82,7 +84,7 @@ loop incrementally.
   `readWithPadding (after the mstores) off len = encode(writes)`. Largest effort —
   needs a from-scratch `ByteArray.write`/`readWithPadding` lemma library (word
   round-trip, adjacent-write composition, non-overlap from `MemoryLayout.lean`).
-  TCB = keccak/transcript bridge axioms + 3 zeroes axioms.
+  TCB = the generic keccak/transcript bridge + the 32-byte `ffi.KEC` shape fact.
 * **(ii) Axiomatize the per-keccak binding (pragmatic).** One auditable axiom per
   keccak shape: "running the kernel's `mstore` choreography then `keccak256 off len`
   yields `keccakWordFromMemory call`." Sidesteps `ByteArray` entirely; larger but

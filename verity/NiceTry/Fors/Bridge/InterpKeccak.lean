@@ -22,14 +22,14 @@ open EvmYul EvmYul.Yul EvmYul.Yul.Ast
 
 /-- The interpreter's keccak value = `ffi.KEC` of the memory window (the `AddressShape`
     form). -/
-theorem keccak256_value (m : MachineState) (mstart sz : UInt256) :
+theorem keccak256_value (m : EvmYul.MachineState) (mstart sz : UInt256) :
     (m.keccak256 mstart sz).1
       = UInt256.ofNat (fromByteArrayBigEndian
           (ffi.KEC (m.memory.readWithPadding mstart.toNat sz.toNat))) := by
   unfold MachineState.keccak256; rfl
 
 /-- Keccak only touches `activeWords`, not `memory`. -/
-theorem keccak256_memory (m : MachineState) (mstart sz : UInt256) :
+theorem keccak256_memory (m : EvmYul.MachineState) (mstart sz : UInt256) :
     (m.keccak256 mstart sz).2.memory = m.memory := by
   unfold MachineState.keccak256; rfl
 
@@ -39,7 +39,8 @@ The loop body runs on an `.Ok` state; `setMachineState`/`mstore` thread through 
 the `toMachineState` after a `mstore(a,v)` sequence is exactly the chained
 `MachineState.mstore` the `AddressShape` shape lemmas take as input. -/
 
-theorem setMachineState_toMachineState_ok (ss : SharedState .Yul) (vs : VarStore) (m : MachineState) :
+theorem setMachineState_toMachineState_ok
+    (ss : SharedState .Yul) (vs : VarStore) (m : EvmYul.MachineState) :
     ((EvmYul.Yul.State.Ok ss vs).setMachineState m).toMachineState = m := rfl
 
 /-- Running `mstore(a,v)` (via `primCall_mstore`) on an `.Ok` state leaves a machine
@@ -77,13 +78,54 @@ theorem uint256_kec_mask_toNat (kec : Nat) (hk : kec < EvmYul.UInt256.size) :
     omega
   rw [uint256_ofNat_land_toNat, Nat.mod_eq_of_lt hk, Nat.mod_eq_of_lt hmask]
 
-/-! ## keccak output size + the full per-hash value→model bridge -/
+/-! ## Keccak output size + the full per-hash value→model bridge -/
 
-/-- **Trust item (keccak output size).** `keccak256` returns a 256-bit hash, so its
-    big-endian value is `< 2²⁵⁶`. A total-correctness spec of the opaque `ffi.KEC`
-    (provable once EVMYulLean's `private fromBytes_was_good_all_year_long` + a KEC-size
-    spec are exposed upstream) — **NOT** a hardness assumption. -/
-axiom ffi_kec_lt (b : ByteArray) : fromByteArrayBigEndian (ffi.KEC b) < EvmYul.UInt256.size
+/-- **Trust item (FFI shape only).** The C-backed `keccak256` primitive returns
+    exactly one 32-byte digest. This mirrors `KECCAK256_OUTPUT_SIZE` in
+    EVMYulLean's `ffi.c`; it makes no claim about the digest's cryptographic
+    contents. -/
+axiom ffi_kec_size (b : ByteArray) : (ffi.KEC b).size = 32
+
+set_option maxHeartbeats 400000 in
+private theorem byteArray_toList_loop_length
+    (ba : ByteArray) (i : Nat) (acc : List UInt8) (hi : i ≤ ba.size) :
+    (ByteArray.toList.loop ba i acc).length = (ba.size - i) + acc.length := by
+  induction i, acc using ByteArray.toList.loop.induct ba with
+  | case1 i acc hlt ih =>
+      unfold ByteArray.toList.loop
+      simp [hlt]
+      rw [ih (Nat.le_of_lt_succ (by omega))]
+      simp [List.length_cons]
+      omega
+  | case2 i acc hge =>
+      unfold ByteArray.toList.loop
+      simp [show ¬(i < ba.size) from hge]
+      omega
+
+private theorem byteArray_toList_length (ba : ByteArray) :
+    ba.toList.length = ba.size := by
+  unfold ByteArray.toList
+  rw [byteArray_toList_loop_length ba 0 [] (Nat.zero_le _)]
+  simp
+
+/-- A 32-byte Keccak output decodes below the EVM word modulus. The arithmetic
+    bound is proved by EVMYulLean's public decoder theorem; only the FFI output
+    length remains trusted. -/
+theorem ffi_kec_lt (b : ByteArray) :
+    fromByteArrayBigEndian (ffi.KEC b) < EvmYul.UInt256.size := by
+  have h := EvmYul.fromBytes_wasnt_naughty
+    (bs := (ffi.KEC b).toList.reverse)
+  unfold EvmYul.fromBytes! at h
+  have hlen : (ffi.KEC b).toList.length = 32 := by
+    rw [byteArray_toList_length, ffi_kec_size]
+  have hrevlen : (ffi.KEC b).toList.reverse.length = 32 := by
+    simpa using hlen
+  have htake :
+      List.take 32 (ffi.KEC b).toList.reverse = (ffi.KEC b).toList.reverse := by
+    rw [← hrevlen, List.take_length]
+  rw [htake] at h
+  simpa [EvmYul.fromByteArrayBigEndian, EvmYul.fromBytesBigEndian,
+    Function.comp, EvmYul.UInt256.size] using h
 
 /-- The contract's `not(0xff…ff)` (16-byte low mask) is exactly `NMaskWord`. -/
 theorem low16_lnot :
@@ -95,7 +137,7 @@ theorem low16_lnot :
     `KEC &&& NMaskWord` — the form the `AddressShape` shape lemmas conclude. With
     `eval_masked_keccak` (the eval) and a shape lemma, each loop-body hash becomes its
     `leafHash`/`climbLevel` model value. -/
-theorem masked_keccak_toNat (m : MachineState) (off len : UInt256) :
+theorem masked_keccak_toNat (m : EvmYul.MachineState) (off len : UInt256) :
     (((m.keccak256 off len).1).land (UInt256.ofNat 0xffffffffffffffffffffffffffffffff).lnot).toNat
       = (fromByteArrayBigEndian (ffi.KEC (m.memory.readWithPadding off.toNat len.toNat)))
           &&& NiceTry.Fors.NMaskWord := by

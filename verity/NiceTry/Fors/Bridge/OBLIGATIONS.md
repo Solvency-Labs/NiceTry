@@ -23,9 +23,9 @@ Status snapshot (`agent/phase4-integration`, 2026-06-14):
   by `hmsg_derivation_eq_overwrite` / `roots_derivation_eq_from_buffer` and the
   `rawWord` reads by `masked_calldataload_read16` (+ `_counter_`) (existing
   `AddressShape.lean` / `TreeCalldata.lean` lemmas that already match the kernel
-  verbatim). Axiom audit on the new theorems: only the documented `evm_keccak_*`,
-  `uint256_toByteArray_{size,roundtrip}`, `ffi_zeroes_eq_empty`, + Lean core; no
-  `sorry`.
+  verbatim). Current axiom audit: only `evm_keccak_transcript`,
+  `ffi_kec_size`, and Lean core; the padding and word-codec facts are proved
+  theorems. No `sorry`.
 - **Held boundary: 2 remaining `local_obligations`** (`proofStatus := .assumed`):
   `full_verifier_memory_refinement` (#9) and `full_raw_verifier_memory_refinement`
   (#10) — Class-C loop choreography on the auxiliary Verity kernel. The equivalent

@@ -23,8 +23,9 @@
   `fun_recover` inside `runForsCalldata ... 100000`; no fuel-monotonicity axiom
   was added.
 - **Build/audit:** `lake build NiceTry` passes all 1172 modules.
-  `#print axioms phase4_forsRefines` reports Lean core plus 6
-  keccak/FFI/word-codec axioms. There is no dispatcher axiom and no `sorryAx`.
+  `#print axioms phase4_forsRefines` reports Lean core plus exactly 2 project
+  axioms: `evm_keccak_transcript` and `ffi_kec_size`. There is no dispatcher,
+  padding, codec, or numeric keccak-bound axiom and no `sorryAx`.
 - **Obligation accounting (2026-06-13): 9 of 11 discharged; last 2 held as a
   documented boundary.** All keccak-transcript memory obligations (#1–#5, #7, #8)
   and both Class-A calldata obligations (#6, #11) are now `proved`, each backed by
@@ -36,8 +37,14 @@
   `phase4_forsRefines`), so discharging the kernel copies would duplicate that
   whole induction for a reference artifact (full rationale + cross-refs in
   `OBLIGATIONS.md`).
-- **Next:** split the bundled keccak/encoding assumptions and upstream the
-  codec/FFI facts. The last 2 kernel obligations are out
+- **Phase 5 trust reduction:** the bundled keccak/encoding assumptions are split,
+  all zero-padding and word-codec facts are now theorems, and the generic
+  keccak numeric bound is derived from the sole FFI shape fact
+  `(ffi.KEC b).size = 32`.
+- **Next:** upstream a public word-codec theorem to remove the private-name
+  maintenance hook, and decide whether to retain `ffi_kec_size` as the honest
+  extern-C contract or connect the FFI to a modeled Keccak implementation. The
+  last 2 kernel obligations are out
   of scope by decision; revisiting them means building a kernel loop-execution
   model (the kernel analogue of `TreeLoop.lean`). Do NOT flip them without real
   lemmas: the Verity `proved` flag is an unchecked label, so honesty rests
@@ -53,23 +60,20 @@
 - **Build:** `lake build NiceTry` passes all 1172 modules on
   `agent/phase4-integration`.
 
-## Trust surface (7 labeled axioms declared; Phase 4 uses 6)
+## Trust surface (2 labeled axioms declared; Phase 4 uses both)
 
 None are hardness assumptions. Verify with `#print axioms <thm>`.
 - **keccak (1)** — `evm_keccak_transcript` (`AddressShape.lean`): EVM Keccak over
   the canonical `encodeTranscript fields` equals the model's opaque
   `keccakWord fields`. `TranscriptEncoding.lean` proves the five concrete
   transcript encodings; `keccakHash16` and `keccakAddress` are proved masks.
-- **FFI memory padding (3)** — `ffi_zeroes_{size,get!,eq_empty}` (`EvmFfiSpec.lean`):
-  total-correctness specs of the opaque `ffi.ByteArray.zeroes`; not crypto.
-- **word-codec (2)** — `uint256_toByteArray_{size,roundtrip}` (`EvmFfiSpec.lean`):
-  true, provable-but-upstream-`private`; discharge via an EVMYulLean PR.
-- **keccak output size (1)** — `ffi_kec_lt` (`InterpKeccak.lean`): `ffi.KEC` value `< 2²⁵⁶`;
-  total-correctness spec, same upstream PR.
+- **keccak FFI shape (1)** — `ffi_kec_size` (`InterpKeccak.lean`): the
+  C-backed `ffi.KEC` returns 32 bytes. The numeric `< 2²⁵⁶` bound is a theorem.
 
-`phase4_forsRefines` uses 6 of these 7 project axioms; `ffi_zeroes_get!` is
-declared for the general byte library but is not in that theorem's dependency
-closure.
+`ffi_zeroes_{size,get!,eq_empty}` and
+`uint256_toByteArray_{size,roundtrip}` are now kernel-checked theorems in
+`EvmFfiSpec.lean`. The codec size proof currently applies an upstream private
+lemma by its generated declaration name; that is a maintenance risk, not trust.
 
 ## Sprint log (2026-06-13d) — Class-A calldata obligations discharged (9/11)
 
@@ -694,7 +698,7 @@ Dependencies are pinned in `lakefile.lean` (`verity@bd211c5`, which pulls
 
 All of the following is committed on `agent/phase4-integration`,
 **`sorry`/`admit`-free**,
-with **7 labeled project axioms declared** on this branch (verify with
+with **2 labeled project axioms declared** on this branch (verify with
 `#print axioms`):
 
 | Area | File | Status |
@@ -706,16 +710,14 @@ with **7 labeled project axioms declared** on this branch (verify with
 | Per-keccak shape equivalences (Class M) | `Bridge/AddressShape.lean` | ✅ address / hmsg / leaf / node (`climbLevel` even+odd) / roots |
 | Roots → `recoverRoot` handoff skeleton | `Bridge/AddressShape.lean` | ✅ `roots_derivation_eq_recoverRoot_of_hash_chains_after_loop_buffer_init` |
 | Memory layout / non-overlap (Class C side-conditions) | `Bridge/MemoryLayout.lean` | ✅ the three `_GUARD`s |
-| Trusted FFI specs (memory padding + keccak) | `Bridge/EvmFfiSpec.lean` | ✅ 5 axioms (3 `ffi_zeroes_*` + `uint256_toByteArray_size` + `uint256_toByteArray_roundtrip`) |
+| Padding + word codec | `Bridge/EvmFfiSpec.lean` | ✅ all five former axioms discharged as theorems |
+| Keccak FFI shape | `Bridge/InterpKeccak.lean` | ✅ one explicit `ffi_kec_size` axiom; numeric bound proved |
 | SoLean oracle discharge + sufficiency | `Bridge/Oracle.lean`, `Bridge/Equivalence.lean` | ✅ `refinement_discharges_oracle`, `refinement_matches_forsAccept` |
 | Deployed dispatcher route | `Bridge/DispatcherRoute.lean` | ✅ selector, ABI guards, eager switch, recover call, and malformed-length outcomes proved |
 
-**The 7 trust-base axioms declared on this branch:** `evm_keccak_transcript`
-(`AddressShape.lean`) + `ffi_zeroes_{size,get!,eq_empty}` +
-`uint256_toByteArray_size` and `uint256_toByteArray_roundtrip`
-(`EvmFfiSpec.lean`) + `ffi_kec_lt` (`InterpKeccak.lean`).
-`phase4_forsRefines` uses 6 of them; `ffi_zeroes_get!` does not appear in its
-axiom audit.
+**The 2 trust-base axioms declared on this branch:** `evm_keccak_transcript`
+(`AddressShape.lean`) + `ffi_kec_size` (`InterpKeccak.lean`).
+`phase4_forsRefines` uses both.
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
 > The deployed contract-execution spine connecting those steps is also **proved**.
@@ -794,9 +796,10 @@ the equivalent deployed-contract induction is already proved in `TreeLoop.lean`.
 ---
 
 ## 4. Suggested grab order
-- **First:** upstream/discharge the codec and FFI size facts.
-- **Second:** investigate proving the remaining `ffi.ByteArray.zeroes` specs
-  from a usable upstream implementation contract.
+- **First:** upstream a public EVMYulLean word-codec theorem so
+  `EvmFfiSpec.lean` no longer reaches a private declaration by generated name.
+- **Second:** decide whether `ffi_kec_size` remains the explicit extern-C
+  contract or is replaced by a proved link from `ffi.KEC` to a modeled Keccak.
 - **Then:** revisit the two held kernel obligations only if certifying the
   auxiliary generated kernel becomes a project requirement.
 
@@ -806,7 +809,8 @@ the equivalent deployed-contract induction is already proved in `TreeLoop.lean`.
   `#check_contract ok` for the Verity kernels.
 - **Axiom audit (`#print axioms`) — clean:** no `sorryAx` anywhere. The bridge
   `phase4_forsRefines` depends only on Lean's
-  `propext / Classical.choice / Quot.sound` plus 6 project axioms.
+  `propext / Classical.choice / Quot.sound` plus
+  `evm_keccak_transcript / ffi_kec_size`.
   The dispatcher route is proved and adds no trust.
   The sufficiency theorem `refinement_discharges_oracle` is pure logic (`[propext]`).
 - Reminder: a bare `lake build` (no target) compiles nothing and still exits 0 — see
