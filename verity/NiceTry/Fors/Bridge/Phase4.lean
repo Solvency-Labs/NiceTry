@@ -1,10 +1,10 @@
 import NiceTry.Fors.Bridge.DispatcherRoute
 
 /-!
-# Phase 4: deployed FORS verifier refinement
+# Phase 4: FORS verifier runtime refinement
 
 This module assembles the checked dispatcher and recovery execution traces into
-the deployed contract refinement theorem. The selector/ABI route, reject
+the runtime-transcription refinement theorem. The selector/ABI route, reject
 branches, 25-tree loop, roots compression, and final address return are proved.
 -/
 
@@ -45,8 +45,8 @@ theorem evmRun_accept
   rw [evmRun_eq_recover_of_sigLen raw digest hlen]
   exact evmRunRecover_accept raw digest hlen hwf hdigest hfz
 
-/-- **Phase 4 complete.** The deployed FORS verifier refines the Lean recovery
-    model on the exact ABI-representable input domain. -/
+/-- **Phase 4 complete.** The reviewed optimized-IR runtime transcription
+    refines the Lean recovery model on the exact ABI-representable input domain. -/
 theorem phase4_forsRefines : ForsRefines :=
   forsRefines_of_branches evmRun_bad_length
     evmRun_forced_zero_reject evmRun_accept

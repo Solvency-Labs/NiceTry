@@ -35,6 +35,20 @@ under `src/Modules/`:
 Bundled vs. composable: pick the factory + a mode for a self-contained
 deployment, pick a validator module to extend an existing modular account.
 
+## FORS+C formal verification
+
+The `agent/phase4-integration` branch contains a complete Lean refinement proof
+for the reviewed optimized-Yul transcription of `ForsVerifier.recover`.
+
+- [Reviewer-facing verification report](verity/NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
+- [Verification workspace README](verity/README.md)
+- Reproduce with `./scripts/audit-fors-verifier.sh`
+
+The final theorem covers dispatcher and ABI guards, rejection paths, all 25
+FORS tree openings, roots compression, and address return. Its project trust
+base is exactly `evm_keccak_transcript` and `ffi_kec_size`. The optimized-IR to
+EVMYulLean transcription remains an explicit review boundary.
+
 ## Contract layout
 
 ```

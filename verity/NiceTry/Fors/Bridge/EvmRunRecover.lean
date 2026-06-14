@@ -5,7 +5,7 @@ import NiceTry.Fors.Bridge.Refinement
 /-!
 # `fun_recover`-scoped execution
 
-The deployed contract's `recover(bytes,bytes32)` is: a tiny selector dispatcher
+The reviewed runtime's `recover(bytes,bytes32)` is: a tiny selector dispatcher
 (`switch` + ABI bounds-guards) that decodes the calldata and calls
 `fun_recover(offset+36, length, calldataload 36)`. **All the cryptographic content
 is in `fun_recover`**; the dispatcher is simple boilerplate.

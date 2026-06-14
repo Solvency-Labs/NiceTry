@@ -96,7 +96,8 @@ shape if a specific proof proves intractable.
 
 ## Concrete next steps (route i)
 
-> **Status update:** steps 1–4 below are now **done** for the deployed contract.
+> **Status update:** steps 1–4 below are now **done** for the reviewed runtime
+> transcription.
 > Phase 5 then narrowed Gap B from five bundled shape axioms to the single
 > `evm_keccak_transcript` assumption over a proved canonical encoder. See
 > [`PICKUP.md`](./PICKUP.md) for the current trust-reduction frontier.

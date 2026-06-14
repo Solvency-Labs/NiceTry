@@ -5,9 +5,9 @@ import NiceTry.Fors.Bridge.EvmMemory
 
 This module separates the mechanical value/byte correspondence from the trusted
 Keccak step. A transcript field is encoded as the exact 32-byte EVM word written
-by the deployed verifier. The cryptographic bridge can therefore be stated over
-`encodeTranscript fields`, without shape-specific byte hypotheses or bundled
-masking claims.
+by the reviewed verifier runtime transcription. The cryptographic bridge can
+therefore be stated over `encodeTranscript fields`, without shape-specific byte
+hypotheses or bundled masking claims.
 -/
 
 namespace NiceTry.Fors.Bridge

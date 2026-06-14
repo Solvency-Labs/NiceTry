@@ -29,7 +29,7 @@ Status snapshot (`agent/phase4-integration`, 2026-06-14):
 - **Held boundary: 2 remaining `local_obligations`** (`proofStatus := .assumed`):
   `full_verifier_memory_refinement` (#9) and `full_raw_verifier_memory_refinement`
   (#10) — Class-C loop choreography on the auxiliary Verity kernel. The equivalent
-  choreography is **already proven for the deployed contract** (`tree_loop_run` +
+  choreography is **already proven for the reviewed runtime transcription** (`tree_loop_run` +
   `Phase4Accept`, inside `phase4_forsRefines`); discharging the kernel copies would
   duplicate that whole induction for a reference artifact. **Decision: held as a
   documented boundary** (see the table notes below for the full rationale and
@@ -67,7 +67,7 @@ per-tree leaf/node facts 25× over 6 levels). These are not closed
 `mstore`/`calldataload` facts, so the MachineState memory-region template does not
 apply.
 
-The equivalent proof **already exists, complete, for the deployed contract**
+The equivalent proof **already exists, complete, for the reviewed runtime transcription**
 (`forsVerifierRuntime`) — the artifact `phase4_forsRefines` actually certifies:
 
 - `TreeLoop.lean:572` `tree_loop_run` / `:667` `tree_loop_run_from_zero` — the
@@ -89,7 +89,7 @@ verifier is equivalent … to the generated Verity Yul artifact").
 
 **Decision (2026-06-13):** hold #9/#10 as `.assumed`. The cost (weeks of
 duplicate proof) is not justified for a reference artifact when the choreography
-is already proven for the deployed contract. To revisit, the real task is a
+is already proven for the reviewed runtime transcription. To revisit, the real task is a
 kernel loop-execution model (the kernel analogue of `TreeLoop.lean`).
 
 (11 named sites; #4/#5 duplicate #1/#2's transcript shape, so the table reads as the

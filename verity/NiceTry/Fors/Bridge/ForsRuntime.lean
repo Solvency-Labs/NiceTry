@@ -4,15 +4,19 @@ import EvmYul.Yul.YulNotation
 /-!
 # `ForsVerifier.sol` as an EVMYulLean `YulContract` (route i, execution core)
 
-`forsVerifierRuntime` is the deployed contract transcribed from its solc optimized
-Yul IR (`forge inspect … irOptimized`) into EVMYulLean's elaboration DSL.
-Transcription rules applied (see `/tmp/normalize_yul.pl`): strip `/* */` + `///`
-comments, `memoryguard(x) → x`, rename `usr$foo → usr_foo` (DSL identifiers).
+`forsVerifierRuntime` is the contract runtime transcribed from its solc
+optimized Yul IR (`forge inspect … irOptimized`) into EVMYulLean's elaboration
+DSL.
+Transcription rules applied: strip comments, reduce `memoryguard(x)` to `x`, and
+rename `usr$foo` to `usr_foo` for the DSL identifier grammar. The pinned source,
+optimized-IR, and Lean-runtime hashes are checked by
+`scripts/audit-fors-verifier.sh`.
 
-**Status: faithful transcription complete.** Dispatcher + both helper functions
+**Status: reviewed transcription complete.** Dispatcher + both helper functions
 (`constant_FORS_SIG_LEN`, `fun_recover` — incl. the FORS tree `for`-loop) are
-transcribed verbatim from the optimized IR and elaborate to a `YulContract`.
-Next: `evmRun` (calldata/fuel/decode) and the `RefinesModel evmRun` proof.
+transcribed from the optimized IR and elaborate to a `YulContract`. The
+transcription is a documented review boundary, not a kernel-proved compiler
+translation; see `VERIFICATION_REPORT.md`.
 -/
 
 namespace NiceTry.Fors.Bridge

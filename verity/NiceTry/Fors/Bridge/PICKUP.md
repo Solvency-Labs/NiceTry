@@ -1,9 +1,10 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
-## Current checkpoint (2026-06-14) — Phase 4 complete through the deployed dispatcher
+## Current checkpoint (2026-06-14) — Phase 4 complete through the reviewed dispatcher transcription
 
 - **Final theorem:** `Phase4.phase4_forsRefines : ForsRefines` proves that the
-  deployed FORS verifier observable agrees with `recoverRaw?` on `ForsAbiInput`.
+  reviewed optimized-IR runtime transcription agrees with `recoverRaw?` on
+  `ForsAbiInput`.
 - **ABI domain fixed honestly:** `RawDomain.lean` now defines `ForsAbiInput` as
   representable length + packed 16-byte fields + a bytes32-sized digest. The old
   length-only statement was false for unbounded model `Nat` values because ABI
@@ -720,7 +721,8 @@ with **2 labeled project axioms declared** on this branch (verify with
 `phase4_forsRefines` uses both.
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
-> The deployed contract-execution spine connecting those steps is also **proved**.
+> The complete reviewed runtime-execution spine connecting those steps is also
+> **proved**. Source-to-transcription correspondence remains a review boundary.
 
 ## 3. What is OPEN — the remaining frontier
 

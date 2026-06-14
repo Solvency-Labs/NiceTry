@@ -1674,7 +1674,7 @@ private theorem evmRun_zero_of_bad_length
     rw [runForsCalldata_encode_unfold, hrun]
     rfl
 
-/-- The deployed dispatcher and the aligned direct `fun_recover` runner have
+/-- The reviewed dispatcher transcription and the aligned direct `fun_recover` runner have
     the same observable result for every ABI-representable raw length. -/
 theorem dispatcher_routes_to_recover
     (raw : RawSig) (digest : Digest)
