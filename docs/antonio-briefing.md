@@ -92,6 +92,74 @@ The verifier proof does not establish all production security by itself.
 | Signer key lifecycle | Operational requirement | Reusing a few-time key weakens security; normal operation must rotate and burn keys. |
 | Wallet and EntryPoint integration | Separate review scope | The theorem covers `ForsVerifier.recover`, not every wallet, bundler, signer, or recovery path. |
 
+## What the parser boundary means
+
+There is one manual translation step in the current proof pipeline.
+
+The Solidity compiler produces optimized Yul. We represent that Yul as an
+EVMYulLean program called `forsVerifierRuntime`. Lean then executes that program
+and proves that its result equals the clean Verity FORS+C model for every
+ABI-representable input.
+
+Lean checks the execution and refinement proof, but it does not currently check
+that a parser copied the optimized Yul into `forsVerifierRuntime` perfectly.
+That correspondence is established today through manual review, pinned
+compiler settings, artifact fingerprints, and an exact deployed-bytecode
+check.
+
+The remaining provenance risk is therefore narrow:
+
+> Does `forsVerifierRuntime` faithfully represent the compiler's optimized
+> Yul?
+
+It is not an open question about whether the 25-tree proof is complete. That
+part is proved. A future kernel-checked parser would remove the manual
+translation boundary by automatically converting optimized Yul into the
+EVMYulLean syntax tree checked by Lean.
+
+```mermaid
+flowchart TD
+    A["ForsVerifier.sol"] --> B["Solidity compiler"]
+    B --> C["Optimized Yul"]
+    C -->|"Manual reviewed transcription"| D["forsVerifierRuntime<br/>EVMYulLean program"]
+
+    D --> E["EVMYulLean interpreter"]
+    E --> F["evmRun<br/>Low-level verifier behavior"]
+
+    G["Verity FORS+C model"] --> H["recoverRaw?<br/>Expected result"]
+
+    F --> I["Lean refinement proof"]
+    H --> I
+    I --> J["phase4_forsRefines<br/>evmRun = recoverRaw?"]
+
+    C -. "Current provenance boundary" .-> D
+```
+
+The two proof sides are:
+
+- **Implementation:** EVMYulLean executes the represented optimized Yul.
+- **Specification:** the Verity model computes the expected FORS+C address.
+- **Refinement:** Lean proves that both sides return the same result for every
+  represented input.
+
+The ideal future pipeline replaces the reviewed transcription with an
+automatically checked conversion:
+
+```mermaid
+flowchart LR
+    A["Optimized Yul"] --> B["Kernel-checked parser"]
+    B --> C["EVMYulLean program"]
+    C --> D["Lean refinement proof"]
+```
+
+The short version for a non-formal-methods audience is:
+
+> Lean proves that our exact EVMYulLean representation of the verifier behaves
+> correctly. The remaining provenance boundary is confirming that this
+> representation faithfully matches Solidity's optimized Yul. We currently
+> enforce that through review, fingerprints, and deployed-bytecode checks; a
+> future verified parser could make the translation automatically checkable.
+
 ## Production go/no-go checklist
 
 Call the verifier production-ready only when every item below is green:
