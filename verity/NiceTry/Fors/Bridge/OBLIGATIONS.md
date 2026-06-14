@@ -4,7 +4,7 @@
 > gotcha, build instructions, what's already proved, and the remaining work split
 > into claimable workstreams. This file is the detailed obligation/discharge plan.
 
-Status snapshot (`agent/tree-loop-A2`, 2026-06-13):
+Status snapshot (`agent/phase4-integration`, 2026-06-14):
 
 - **Structural Lean proofs: fully closed.** `grep -rn 'sorry\|admit' NiceTry/Fors` → 0 hits.
 - **Hand-written runtime loop: fully closed.** The real 25-iteration
@@ -12,6 +12,9 @@ Status snapshot (`agent/tree-loop-A2`, 2026-06-13):
   writes are proved in `Tree*.lean`.
 - **Pre-loop trace: fully closed.** `TreeEntryFront.lean` executes the hmsg front
   half, proves its transcript value, and composes through `LoopInv 0`.
+- **Deployed dispatcher route: fully closed.** `DispatcherRoute.lean` proves the
+  selector switch, ABI guards, exact-fuel `fun_recover` call, and malformed-length
+  outcomes. `dispatcher_routes_to_recover` is a theorem, not an axiom.
 - **9 of 11 obligations discharged (2026-06-13).** All keccak-transcript memory
   obligations (#1–#5, #7, #8) and both Class-A calldata obligations (#6, #11) are
   now `proved`, each backed by a real Lean theorem: leaf/node/address by

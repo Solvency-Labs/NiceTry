@@ -326,7 +326,7 @@ theorem call_accept
       ∧ addressFromRoot (decodeTyped raw).pkSeed
           (recoverRoot (decodeTyped raw) (dValOf raw digest)) < 2 ^ 160 := by
   obtain ⟨S, hbody, hvalue, hbound⟩ :=
-    exec_accept_body raw digest 0 hlen hwf hdigest hfz
+    exec_accept_body raw digest 99828 hlen hwf hdigest hfz
   refine ⟨S, ?_, hvalue, hbound⟩
   unfold recoverFuel
   apply call_err

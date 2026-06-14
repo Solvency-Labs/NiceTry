@@ -1,6 +1,6 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
-## Current checkpoint (2026-06-13) — Phase 4 complete
+## Current checkpoint (2026-06-14) — Phase 4 complete through the deployed dispatcher
 
 - **Final theorem:** `Phase4.phase4_forsRefines : ForsRefines` proves that the
   deployed FORS verifier observable agrees with `recoverRaw?` on `ForsAbiInput`.
@@ -14,13 +14,17 @@
 - **Reject paths closed:** `Phase4Reject.lean` proves the exact malformed-length
   word guard/body and the forced-zero `YulHalt` zero return. The scoped observable
   normalizes malformed lengths to zero before running the checked good-length call.
-- **Fuel is exact:** the proof uses `recoverFuel = 155`; Class-A prefix lemmas are
-  fuel-parametric, so no fuel-monotonicity assumption was added.
-- **Dispatcher boundary:** `dispatcher_routes_to_recover` remains the single
-  deployed-dispatcher routing assumption. Removing it is Phase 5.
-- **Build/audit:** `lake build NiceTry` passes all 1169 modules.
-  `#print axioms phase4_forsRefines` reports only Lean core plus the documented
-  dispatcher, keccak, FFI, and word-codec trust items. No `sorryAx`.
+- **Dispatcher route closed:** `DispatcherRoute.lean` executes the real selector
+  switch, ABI decode and bounds guards, then proves the call into
+  `fun_recover(100, raw.len, digest)`. Malformed representable lengths are covered
+  by the dispatcher's revert paths or the aligned direct call's out-of-fuel result.
+  `dispatcher_routes_to_recover` is now a theorem, not an axiom.
+- **Fuel is exact:** `recoverFuel = 99983`, exactly the fuel received by
+  `fun_recover` inside `runForsCalldata ... 100000`; no fuel-monotonicity axiom
+  was added.
+- **Build/audit:** `lake build NiceTry` passes all 1171 modules.
+  `#print axioms phase4_forsRefines` reports Lean core plus 10 existing
+  keccak/FFI/word-codec axioms. There is no dispatcher axiom and no `sorryAx`.
 - **Obligation accounting (2026-06-13): 9 of 11 discharged; last 2 held as a
   documented boundary.** All keccak-transcript memory obligations (#1–#5, #7, #8)
   and both Class-A calldata obligations (#6, #11) are now `proved`, each backed by
@@ -32,8 +36,8 @@
   `phase4_forsRefines`), so discharging the kernel copies would duplicate that
   whole induction for a reference artifact (full rationale + cross-refs in
   `OBLIGATIONS.md`).
-- **Next:** discharge dispatcher routing, split the bundled keccak/encoding
-  assumptions, upstream the codec/FFI facts. The last 2 kernel obligations are out
+- **Next:** split the bundled keccak/encoding assumptions and upstream the
+  codec/FFI facts. The last 2 kernel obligations are out
   of scope by decision; revisiting them means building a kernel loop-execution
   model (the kernel analogue of `TreeLoop.lean`). Do NOT flip them without real
   lemmas: the Verity `proved` flag is an unchecked label, so honesty rests
@@ -46,10 +50,10 @@
   `state_getElem_finsert_ne` (Finmap form) won't match a `State.insert` chain — use a `show`
   to the collapsed `Ok a (vs.insert ...)` form (defeq by rfl) first. `exec_let_lit` produces
   `vars.head!` keys; clean with `simp only [List.head!_cons]`.
-- **Build:** `lake build NiceTry` passes all 1169 modules on
+- **Build:** `lake build NiceTry` passes all 1171 modules on
   `agent/phase4-integration`.
 
-## Trust surface (12 labeled axioms — `#print axioms` shows only these + Lean core)
+## Trust surface (11 labeled axioms declared; Phase 4 uses 10)
 
 None are hardness assumptions. Verify with `#print axioms <thm>`.
 - **keccak (5)** — `evm_keccak_{address,hmsg,leaf,node,roots}` (`AddressShape.lean`): the
@@ -61,9 +65,10 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   true, provable-but-upstream-`private`; discharge via an EVMYulLean PR.
 - **keccak output size (1)** — `ffi_kec_lt` (`InterpKeccak.lean`): `ffi.KEC` value `< 2²⁵⁶`;
   total-correctness spec, same upstream PR.
-- **dispatcher routing (1)** — `dispatcher_routes_to_recover` (`EvmRunRecover.lean`): the
-  `fun_recover`-scoping assumption; dischargeable via the switch composition + the
-  remaining fuel-monotonicity.
+
+`phase4_forsRefines` uses 10 of these 11 project axioms; `ffi_zeroes_get!` is
+declared for the general byte library but is not in that theorem's dependency
+closure.
 
 ## Sprint log (2026-06-13d) — Class-A calldata obligations discharged (9/11)
 
@@ -363,7 +368,7 @@ None are hardness assumptions. Verify with `#print axioms <thm>`.
   eager `switch` + fuel-monotonicity (incl. the `execSwitchCases` non-mono crux) are
   *off the critical path*. `evmRunRecover` runs `fun_recover` directly; the dispatcher
   routing is **one explicit, dischargeable axiom** `dispatcher_routes_to_recover`
-  (boilerplate, not crypto — discharge later via the switch composition). The target
+  (historical note: discharged on 2026-06-14 by `DispatcherRoute.lean`). The target
   is now `fun_recover`'s recovery logic, where the value is.
 - **Tree-loop foundation** (`InterpLoop.lean`): the `for`-loop step lemmas
   (`exec_for`/`loop_exit`/`loop_step`/`loop_cond_err`) — the induction scaffolding.
@@ -688,7 +693,7 @@ Dependencies are pinned in `lakefile.lean` (`verity@bd211c5`, which pulls
 
 All of the following is committed on `agent/phase4-integration`,
 **`sorry`/`admit`-free**,
-with trust localized to **12 labeled axioms** on this branch (verify with
+with **11 labeled project axioms declared** on this branch (verify with
 `#print axioms`):
 
 | Area | File | Status |
@@ -702,30 +707,27 @@ with trust localized to **12 labeled axioms** on this branch (verify with
 | Memory layout / non-overlap (Class C side-conditions) | `Bridge/MemoryLayout.lean` | ✅ the three `_GUARD`s |
 | Trusted FFI specs (memory padding + keccak) | `Bridge/EvmFfiSpec.lean` | ✅ 5 axioms (3 `ffi_zeroes_*` + `uint256_toByteArray_size` + `uint256_toByteArray_roundtrip`) |
 | SoLean oracle discharge + sufficiency | `Bridge/Oracle.lean`, `Bridge/Equivalence.lean` | ✅ `refinement_discharges_oracle`, `refinement_matches_forsAccept` |
+| Deployed dispatcher route | `Bridge/DispatcherRoute.lean` | ✅ selector, ABI guards, eager switch, recover call, and malformed-length outcomes proved |
 
-**The 12 trust-base axioms on this branch:** `evm_keccak_{address,hmsg,leaf,node,roots}`
+**The 11 trust-base axioms declared on this branch:** `evm_keccak_{address,hmsg,leaf,node,roots}`
 (`AddressShape.lean`) + `ffi_zeroes_{size,get!,eq_empty}` + `uint256_toByteArray_size`
 and `uint256_toByteArray_roundtrip` (`EvmFfiSpec.lean`) + `ffi_kec_lt`
-(`InterpKeccak.lean`) + `dispatcher_routes_to_recover` (`EvmRunRecover.lean`).
-The last item is a temporary interpreter-routing assumption, not a cryptographic one.
+(`InterpKeccak.lean`). `phase4_forsRefines` uses 10 of them; `ffi_zeroes_get!`
+does not appear in its axiom audit.
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
-> The contract-execution spine connecting those steps is **not yet assembled**.
+> The deployed contract-execution spine connecting those steps is also **proved**.
 
 ## 3. What is OPEN — the remaining frontier
 
-Everything reduces to: **connect the interpreter actually running
-`forsVerifierRuntime` to the premises the proved handoff lemmas already consume.**
-`ForsRefines` / `RefinesModel evmRun` is currently only a `def : Prop` with a prose
-decomposition (`EvmRun.lean` lines 64-87, `Equivalence.lean` lines 55-96). Four
-independently-claimable workstreams:
+The deployed refinement is assembled. Remaining work reduces the explicit trust
+surface or expands certification to the auxiliary Verity kernel; it is no longer
+needed to establish `phase4_forsRefines`.
 
-### WS-1 · Class-A / reject paths — branch internals proved, outer composition open
-The ABI byte library and good-length dispatcher trace are proved.
-`Phase4Reject.lean` now proves the bad-length guard/body and the forced-zero
-`mstore(0,0); return(0,0x20)` branch, plus the `evmRun` lift wrappers. Remaining:
-compose each branch from the actual `call`/`fun_recover` entry to obtain the two
-`evmRunRecover = 0` hypotheses consumed by those wrappers.
+### WS-1 · Class-A / reject paths and dispatcher — ✅ **DONE**
+The ABI byte library, reject branches, direct recover call, and full deployed
+dispatcher trace are proved. `DispatcherRoute.lean` composes the eager switch,
+ABI guards, and `fun_recover` call for both valid and malformed lengths.
 - **Foundation in place:**
   - `Bridge/Interp.lean` — one-step `exec` reductions (Block/If/Leave/Break/Continue/
     out-of-fuel) + `eval` base cases (Lit/Var/evalArgs-nil). Recipe:
@@ -782,28 +784,28 @@ adds **zero trust** (`#print axioms` = `propext/Classical.choice/Quot.sound`).
 `phase4_forsRefines : ForsRefines`. `ForsRefines` and `RefinesModel` now use the
 truthful `ForsAbiInput` domain.
 
-### Finishing step (after WS-1..4)
-Flip the 12 Verity `local_obligations` `.assumed → .proved` and rebuild with
-`lake exe verity-compiler … --deny-local-obligations` to enforce none remain
-(`OBLIGATIONS.md` §"Discharge order" step 5).
+### Verity accounting boundary
+Nine of the eleven Verity `local_obligations` are backed by real Lean theorems.
+The remaining two kernel-loop choreography labels are deliberately held because
+the equivalent deployed-contract induction is already proved in `TreeLoop.lean`.
 
 ---
 
 ## 4. Suggested grab order
-- **First:** replace `dispatcher_routes_to_recover` with the dispatcher
-  switch/fuel composition theorem.
-- **Second:** split the five `evm_keccak_*` bridges into keccak-only trust plus
+- **First:** split the five `evm_keccak_*` bridges into keccak-only trust plus
   proved transcript encoding/masking.
-- **Third:** upstream/discharge the codec and FFI size facts.
-- **Then:** flip the 12 Verity accounting obligations.
+- **Second:** upstream/discharge the codec and FFI size facts.
+- **Then:** revisit the two held kernel obligations only if certifying the
+  auxiliary generated kernel becomes a project requirement.
 
 ## 5. Build status of this branch
-- **`lake build NiceTry` — verified green (2026-06-13):** 1169 modules built,
+- **`lake build NiceTry` — verified green (2026-06-14):** 1171 modules built,
   no errors, and the three
   `#check_contract ok` for the Verity kernels.
 - **Axiom audit (`#print axioms`) — clean:** no `sorryAx` anywhere. The bridge
-  theorems depend only on Lean's `propext / Classical.choice / Quot.sound` plus the
-  12 labeled trust axioms listed at the top of this file.
+  `phase4_forsRefines` depends only on Lean's
+  `propext / Classical.choice / Quot.sound` plus 10 existing project axioms.
+  The dispatcher route is proved and adds no trust.
   The sufficiency theorem `refinement_discharges_oracle` is pure logic (`[propext]`).
 - Reminder: a bare `lake build` (no target) compiles nothing and still exits 0 — see
   §1. Always build `NiceTry` and re-run the axiom audit after touching the Bridge.

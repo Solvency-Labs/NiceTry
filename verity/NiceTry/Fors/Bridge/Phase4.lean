@@ -1,12 +1,11 @@
-import NiceTry.Fors.Bridge.Phase4Reject
+import NiceTry.Fors.Bridge.DispatcherRoute
 
 /-!
 # Phase 4: deployed FORS verifier refinement
 
-This module assembles the checked scoped execution traces into the deployed
-contract refinement theorem. The only routing trust item is the existing
-`dispatcher_routes_to_recover` axiom; the FORS recovery body, reject branches,
-25-tree loop, roots compression, and final address return are proved.
+This module assembles the checked dispatcher and recovery execution traces into
+the deployed contract refinement theorem. The selector/ABI route, reject
+branches, 25-tree loop, roots compression, and final address return are proved.
 -/
 
 namespace NiceTry.Fors.Bridge

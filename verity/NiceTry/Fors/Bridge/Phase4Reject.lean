@@ -479,25 +479,25 @@ theorem exec_recover_forced_zero_reject_from_hmsg_matches
 
 /-- Forced-zero rejection for the complete `fun_recover` body. -/
 theorem exec_recover_forced_zero_reject_body
-    (raw : RawSig) (digest : Digest)
+    (raw : RawSig) (digest : Digest) (n : Nat)
     (hlen : raw.len = SigLen)
     (hwf : RawSigWellFormed raw)
     (hdigest : DigestFitsEvmWord digest)
     (hfz : forcedZero (dValOf raw digest) = false) :
     ∃ S : EvmYul.Yul.State,
-      exec 154 (.Block forsFunRecover.body) (some forsVerifierRuntime)
+      exec (n + 154) (.Block forsFunRecover.body) (some forsVerifierRuntime)
           (recoverEntryState raw digest)
         = .error (.YulHalt S ⟨1⟩)
       ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
   have hguard :=
     recoverHmsg_guard_ne_zero_of_forcedZero_false raw digest hwf hdigest hfz
   obtain ⟨S, hsuffix, hzero⟩ :=
-    exec_recover_forced_zero_reject_from_hmsg raw digest 99 hguard
+    exec_recover_forced_zero_reject_from_hmsg raw digest (n + 99) hguard
   refine ⟨S, ?_, hzero⟩
-  rw [show 154 = 107 + 47 by omega,
-    exec_recover_good_prefix_to_hmsg raw digest 107 hlen]
-  rw [show 107 + 29 = 99 + 37 by omega,
-    exec_recover_hmsg_named raw digest (some forsVerifierRuntime) 99]
+  rw [show n + 154 = (n + 107) + 47 by omega,
+    exec_recover_good_prefix_to_hmsg raw digest (n + 107) hlen]
+  rw [show n + 107 + 29 = (n + 99) + 37 by omega,
+    exec_recover_hmsg_named raw digest (some forsVerifierRuntime) (n + 99)]
   simpa using hsuffix
 
 /-- Forced-zero rejection entered through the actual scoped function call. -/
@@ -513,7 +513,7 @@ theorem call_recover_forced_zero_reject
         = .error (.YulHalt S ⟨1⟩)
       ∧ fromByteArrayBigEndian S.sharedState.H_return = 0 := by
   obtain ⟨S, hbody, hzero⟩ :=
-    exec_recover_forced_zero_reject_body raw digest hlen hwf hdigest hfz
+    exec_recover_forced_zero_reject_body raw digest 99828 hlen hwf hdigest hfz
   refine ⟨S, ?_, hzero⟩
   unfold recoverFuel
   apply call_err
@@ -532,29 +532,5 @@ theorem evmRunRecover_forced_zero_reject
   obtain ⟨S, hcall, hzero⟩ :=
     call_recover_forced_zero_reject raw digest hlen hwf hdigest hfz
   exact evmRunRecover_zero_of_call_yulhalt_zero raw digest hcall hzero
-
-/-! ## Dispatcher-routing lifts -/
-
-/-- Once the scoped `fun_recover` bad-length theorem is available, this is the
-    exact `h_len` branch expected by `forsRefines_of_branches`. -/
-theorem evmRun_h_len_of_evmRunRecover
-    (hrec : ∀ raw digest, RawSigLenFitsEvmWord raw →
-      raw.len ≠ SigLen → evmRunRecover raw digest = 0) :
-    ∀ raw digest, RawSigLenFitsEvmWord raw →
-      raw.len ≠ SigLen → evmRun raw digest = 0 := by
-  intro raw digest hfit hlen
-  rw [dispatcher_routes_to_recover raw digest hfit]
-  exact hrec raw digest hfit hlen
-
-/-- Once the scoped `fun_recover` forced-zero theorem is available, this is the
-    exact `h_guard` branch expected by `forsRefines_of_branches`. -/
-theorem evmRun_h_guard_of_evmRunRecover
-    (hrec : ∀ raw digest, raw.len = SigLen →
-      forcedZero (dValOf raw digest) = false → evmRunRecover raw digest = 0) :
-    ∀ raw digest, raw.len = SigLen →
-      forcedZero (dValOf raw digest) = false → evmRun raw digest = 0 := by
-  intro raw digest hlen hguard
-  rw [evmRun_eq_recover_of_sigLen raw digest hlen]
-  exact hrec raw digest hlen hguard
 
 end NiceTry.Fors.Bridge
