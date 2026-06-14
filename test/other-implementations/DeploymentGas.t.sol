@@ -2,29 +2,28 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {SimpleAccountFactory} from "../src/SimpleAccountFactory.sol";
-import {SimpleAccount_WOTS} from "../src/SimpleAccounts/SimpleAccount_WOTS.sol";
-import {SimpleAccount_ECDSA} from "../src/SimpleAccounts/SimpleAccount_ECDSA.sol";
-import {WotsCVerifier} from "../src/Verifiers/WotsCVerifier.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
+import {LegacySimpleAccountFactory} from "../../other-implementations/LegacySimpleAccountFactory.sol";
+import {SimpleAccount_WOTS} from "../../other-implementations/wots/SimpleAccount_WOTS.sol";
+import {SimpleAccount_ECDSA} from "../../other-implementations/ecdsa/SimpleAccount_ECDSA.sol";
+import {WotsCVerifier} from "../../other-implementations/wots/WotsCVerifier.sol";
+import {IWotsCVerifier} from "../../other-implementations/wots/IWotsCVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {WotsSigner} from "./WotsCVerifier.t.sol";
+import {WotsSigner} from "./wots/WotsCVerifier.t.sol";
 import {EntryPointLib} from "kernel/sdk/TestBase/erc4337Util.sol";
 
 /// @dev Measures deployment + first-userOp costs for SimpleAccount_WOTS and
 ///      SimpleAccount_ECDSA, plus subsequent-userOp costs for comparison.
 contract DeploymentGasTest is Test {
     IEntryPoint entrypoint;
-    SimpleAccountFactory factory;
+    LegacySimpleAccountFactory factory;
     WotsCVerifier verifier;
 
     function setUp() public {
         entrypoint = IEntryPoint(EntryPointLib.deploy());
         verifier = new WotsCVerifier();
-        factory = new SimpleAccountFactory(entrypoint, IWotsCVerifier(address(verifier)), IForsVerifier(address(0)));
+        factory = new LegacySimpleAccountFactory(entrypoint, IWotsCVerifier(address(verifier)));
     }
 
     // =========================================================================
@@ -58,8 +57,7 @@ contract DeploymentGasTest is Test {
 
         // initCode = factory address || createAccount(owner, salt, mode)
         bytes memory initCode = abi.encodePacked(
-            address(factory),
-            abi.encodeWithSelector(factory.createAccount.selector, k.addr, uint256(0), uint8(1))
+            address(factory), abi.encodeWithSelector(factory.createAccount.selector, k.addr, uint256(0), uint8(1))
         );
 
         bytes memory callData = abi.encodePacked(
@@ -132,8 +130,7 @@ contract DeploymentGasTest is Test {
         vm.deal(predicted, 10 ether);
 
         bytes memory initCode = abi.encodePacked(
-            address(factory),
-            abi.encodeWithSelector(factory.createAccount.selector, owner, uint256(0), uint8(0))
+            address(factory), abi.encodeWithSelector(factory.createAccount.selector, owner, uint256(0), uint8(0))
         );
 
         bytes memory callData = abi.encodePacked(

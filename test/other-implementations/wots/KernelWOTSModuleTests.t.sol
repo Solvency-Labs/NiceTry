@@ -2,16 +2,20 @@
 pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
-import {KernelRotatingWOTSValidator} from "../src/Modules/KernelRotatingWOTSValidator.sol";
-import {MockKernelAccount} from "../src/Modules/MockKernelAccount.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {WOTS_BLOB_LEN} from "../src/Verifiers/WotsCVerifier.sol";
+import {KernelRotatingWOTSValidator} from "../../../other-implementations/wots/KernelRotatingWOTSValidator.sol";
+import {MockKernelAccount} from "../../../other-implementations/kernel/MockKernelAccount.sol";
+import {IWotsCVerifier} from "../../../other-implementations/wots/IWotsCVerifier.sol";
+import {WOTS_BLOB_LEN} from "../../../other-implementations/wots/WotsCVerifier.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 
 /// @dev wrecover mock: test pre-sets the address to return.
 contract MockWotsVerifier is IWotsCVerifier {
     address public recovered;
-    function setRecovered(address a) external { recovered = a; }
+
+    function setRecovered(address a) external {
+        recovered = a;
+    }
+
     function wrecover(bytes calldata, bytes32) external view returns (address) {
         return recovered;
     }
@@ -41,7 +45,9 @@ contract KernelRotatingWOTSValidatorTest is Test {
     // --- helpers ---
 
     function _op(address sender, bytes memory callData, bytes memory sig)
-        internal pure returns (PackedUserOperation memory)
+        internal
+        pure
+        returns (PackedUserOperation memory)
     {
         return PackedUserOperation({
             sender: sender,
@@ -127,10 +133,8 @@ contract KernelRotatingWOTSValidatorTest is Test {
 
     function test_badBlobLenRejected() public {
         verifier.setRecovered(owner0);
-        uint256 r = accountA.validateUserOp(
-            _op(address(accountA), _cd(owner1), new bytes(WOTS_BLOB_LEN - 1)),
-            keccak256("op")
-        );
+        uint256 r =
+            accountA.validateUserOp(_op(address(accountA), _cd(owner1), new bytes(WOTS_BLOB_LEN - 1)), keccak256("op"));
         assertEq(r, 1);
     }
 
@@ -220,10 +224,7 @@ contract KernelRotatingWOTSValidatorTest is Test {
     // --- ERC-1271 disabled ---
 
     function test_isValidSignatureWithSender_alwaysInvalid() public view {
-        assertEq(
-            validator.isValidSignatureWithSender(address(0), bytes32(0), ""),
-            bytes4(0xffffffff)
-        );
+        assertEq(validator.isValidSignatureWithSender(address(0), bytes32(0), ""), bytes4(0xffffffff));
     }
 
     function test_verifierImmutableSet() public view {

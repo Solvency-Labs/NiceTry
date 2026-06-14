@@ -2,19 +2,13 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {
-    ForsVerifier,
-    FORS_SIG_LEN
-} from "../src/Verifiers/ForsVerifier.sol";
+import {ForsVerifier, FORS_SIG_LEN} from "../src/Verifiers/ForsVerifier.sol";
 
 contract ForsReferenceVectorTest is Test {
     function test_pythonReferenceVector_recoversExpectedAddress() public {
         ForsVerifier verifier = new ForsVerifier();
 
-        string memory path = string.concat(
-            vm.projectRoot(),
-            "/test/vectors/fors-reference-0.json"
-        );
+        string memory path = string.concat(vm.projectRoot(), "/test/vectors/fors-reference-0.json");
         string memory json = vm.readFile(path);
 
         bytes memory signature = vm.parseJsonBytes(json, ".signature");

@@ -2,20 +2,22 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "../src/SimpleAccounts/SimpleAccount_WOTS.sol";
-import "../src/SimpleAccountFactory.sol";
-import {IWotsCVerifier} from "../src/Interfaces/IWotsCVerifier.sol";
-import {IForsVerifier} from "../src/Interfaces/IForsVerifier.sol";
-import {WOTS_BLOB_LEN} from "../src/Verifiers/WotsCVerifier.sol";
+import "../../../other-implementations/wots/SimpleAccount_WOTS.sol";
+import {LegacySimpleAccountFactory} from "../../../other-implementations/LegacySimpleAccountFactory.sol";
+import {IWotsCVerifier} from "../../../other-implementations/wots/IWotsCVerifier.sol";
+import {WOTS_BLOB_LEN} from "../../../other-implementations/wots/WotsCVerifier.sol";
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /// @dev Configurable mock. Test pre-sets the address wrecover() should return
 ///      to simulate "this key signed". Default is address(0) (= bad sig).
 contract MockWotsVerifier is IWotsCVerifier {
     address public recovered;
 
-    function setRecovered(address a) external { recovered = a; }
+    function setRecovered(address a) external {
+        recovered = a;
+    }
 
     function wrecover(bytes calldata, bytes32) external view returns (address) {
         return recovered;
@@ -23,7 +25,7 @@ contract MockWotsVerifier is IWotsCVerifier {
 }
 
 contract SimpleAccountWotsTest is Test {
-    SimpleAccountFactory factory;
+    LegacySimpleAccountFactory factory;
     SimpleAccount_WOTS account;
     MockWotsVerifier verifier;
     IEntryPoint entryPoint;
@@ -45,7 +47,7 @@ contract SimpleAccountWotsTest is Test {
         vm.etch(ENTRYPOINT, hex"00");
 
         verifier = new MockWotsVerifier();
-        factory = new SimpleAccountFactory(entryPoint, verifier, IForsVerifier(address(0)));
+        factory = new LegacySimpleAccountFactory(entryPoint, verifier);
 
         address accountAddr = factory.createAccount(owner0, 0, 1);
         account = SimpleAccount_WOTS(payable(accountAddr));
@@ -64,7 +66,7 @@ contract SimpleAccountWotsTest is Test {
     }
 
     function test_CannotReinitialize() public {
-        vm.expectRevert("WotsAccount: already initialized");
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         account.initialize(makeAddr("attacker"));
     }
 
@@ -159,6 +161,18 @@ contract SimpleAccountWotsTest is Test {
         account.validateUserOp(op, keccak256("op"), 0.1 ether);
 
         assertEq(ENTRYPOINT.balance, before + 0.1 ether);
+    }
+
+    function test_validateRevertsIfPrefundTransferFails() public {
+        verifier.setRecovered(owner0);
+        bytes memory callData = _execCalldata(recipient, 0, "", owner1);
+        PackedUserOperation memory op = _userOp(callData, _dummyBlob());
+
+        vm.prank(ENTRYPOINT);
+        vm.expectRevert("WotsAccount: prefund failed");
+        account.validateUserOp(op, keccak256("op"), address(account).balance + 1);
+
+        assertEq(account.owner(), owner0);
     }
 
     function test_multiTxMainRotationChain() public {
@@ -262,8 +276,8 @@ contract SimpleAccountWotsTest is Test {
         uint256 r = account.validateUserOp(op, keccak256("op"), 0);
 
         assertEq(r, 0);
-        assertEq(account.owner(), owner1);              // main rotated
-        assertEq(account.spareKeys(spare1), 2);         // tombstoned
+        assertEq(account.owner(), owner1); // main rotated
+        assertEq(account.spareKeys(spare1), 2); // tombstoned
         assertEq(account.spareKeyCount(), 0);
     }
 
@@ -329,12 +343,26 @@ contract SimpleAccountWotsTest is Test {
         assertEq(account.owner(), owner0);
     }
 
+    function test_ownerCannotWithdrawDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("WotsAccount: not from EntryPoint or account");
+        account.withdrawDepositTo(payable(recipient), 0);
+    }
+
+    function test_ownerCannotAddDepositDirectly() public {
+        vm.prank(owner0);
+        vm.expectRevert("WotsAccount: not from EntryPoint or account");
+        account.addDeposit();
+    }
+
     function test_executeBatch() public {
         address r2 = makeAddr("r2");
         address[] memory targets = new address[](2);
-        targets[0] = recipient; targets[1] = r2;
+        targets[0] = recipient;
+        targets[1] = r2;
         uint256[] memory values = new uint256[](2);
-        values[0] = 1 ether; values[1] = 2 ether;
+        values[0] = 1 ether;
+        values[1] = 2 ether;
         bytes[] memory datas = new bytes[](2);
 
         vm.prank(ENTRYPOINT);
@@ -355,21 +383,18 @@ contract SimpleAccountWotsTest is Test {
     // =========================================================================
 
     function _execCalldata(address to, uint256 value, bytes memory data, address nextOwner)
-        internal view returns (bytes memory)
+        internal
+        view
+        returns (bytes memory)
     {
-        return abi.encodePacked(
-            abi.encodeWithSelector(account.execute.selector, to, value, data),
-            bytes20(nextOwner)
-        );
+        return abi.encodePacked(abi.encodeWithSelector(account.execute.selector, to, value, data), bytes20(nextOwner));
     }
 
     function _dummyBlob() internal pure returns (bytes memory) {
         return new bytes(WOTS_BLOB_LEN);
     }
 
-    function _userOp(bytes memory callData, bytes memory sig)
-        internal view returns (PackedUserOperation memory)
-    {
+    function _userOp(bytes memory callData, bytes memory sig) internal view returns (PackedUserOperation memory) {
         return PackedUserOperation({
             sender: address(account),
             nonce: 0,
@@ -385,7 +410,14 @@ contract SimpleAccountWotsTest is Test {
 
     /// @dev Convenience: build + validate a main-signer userOp. Assumes verifier
     ///      is already configured to return the expected signer.
-    function _validateMain(address /*signer*/, address nextOwner, bytes32 userOpHash) internal {
+    function _validateMain(
+        address,
+        /*signer*/
+        address nextOwner,
+        bytes32 userOpHash
+    )
+        internal
+    {
         bytes memory callData = _execCalldata(recipient, 0, "", nextOwner);
         PackedUserOperation memory op = _userOp(callData, _dummyBlob());
 

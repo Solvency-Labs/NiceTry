@@ -110,14 +110,22 @@ Pinned fingerprints:
 
 | Artifact | SHA-256 |
 |---|---|
-| `src/Verifiers/ForsVerifier.sol` | `f7dc82ec7019e4f2648c278f121d24713c709d805bcdc7cba892a871e04c903d` |
-| generated optimized IR | `a5468ffa1ff600b5e0aca9e08f260e55ca8f3807503f365e2cf32eeac066bb8e` |
+| `src/Verifiers/ForsVerifier.sol` | `aa6d44b994bdb5877863dd0400252649b03b48116f3da432bf4d932031436faf` |
+| generated optimized IR | `531d8dd32a84ec56961bd4f220fce1466c533e40019e0729b97c6b328de21691` |
 | `Bridge/ForsRuntime.lean` | `ae3412b2f7fb063938456db4b328a407e0061f9f447f56177442f71d0d91507e` |
 
 The audit script rejects source, IR, or runtime drift. These hashes establish
 review reproducibility, not semantic equality. A reviewer must still accept the
 transcription or require a future parser/certificate that derives the
 EVMYulLean AST directly from compiler output.
+
+The June 14, 2026 merge of `origin/main` changed the verifier's inherited
+interface from `IForsVerifier` to `ISignatureVerifier` and reformatted the
+source. After source-location annotations and compiler metadata are removed,
+the optimized Yul is byte-for-byte identical to the previously reviewed
+artifact. The deployed runtime bytecode before its 53-byte CBOR metadata
+trailer is also identical, with SHA-256
+`33b60dfc027b678803ab4448a6d1c197f40e49528cfc5ff3c54815abf579889f`.
 
 ## Auxiliary Verity kernels
 

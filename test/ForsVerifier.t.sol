@@ -25,9 +25,9 @@ import {
 ///      For larger A this approach OOMs — the K=14, A=10 attempt died at
 ///      ~340k keccaks for that reason. K=26, A=5 stays well under.
 library ForsSigner {
-    uint256 internal constant TREE_NODES = 64;            // bytes16[64] heap layout
-    uint256 internal constant LEAVES_OFF = 32;            // leaves at indices 32..63
-    uint256 internal constant ROOT_IDX   = 1;             // root at index 1
+    uint256 internal constant TREE_NODES = 64; // bytes16[64] heap layout
+    uint256 internal constant LEAVES_OFF = 32; // leaves at indices 32..63
+    uint256 internal constant ROOT_IDX = 1; // root at index 1
 
     struct Key {
         bytes16 skSeed;
@@ -40,19 +40,12 @@ library ForsSigner {
 
     function _adrsLeaf(uint256 t, uint256 mdT) private pure returns (bytes32) {
         // type=FORS_TREE, cp=0, ha = (t << A) | mdT
-        return bytes32(
-            (FORS_TYPE_FORS_TREE << 128) |
-            ((t << FORS_A) | mdT)
-        );
+        return bytes32((FORS_TYPE_FORS_TREE << 128) | ((t << FORS_A) | mdT));
     }
 
     function _adrsNode(uint256 t, uint256 cp, uint256 idx) private pure returns (bytes32) {
         // type=FORS_TREE, cp=cp, ha = (t << (A-cp)) | idx
-        return bytes32(
-            (FORS_TYPE_FORS_TREE << 128) |
-            (cp << 32) |
-            ((t << (FORS_A - cp)) | idx)
-        );
+        return bytes32((FORS_TYPE_FORS_TREE << 128) | (cp << 32) | ((t << (FORS_A - cp)) | idx));
     }
 
     function _adrsRoots() private pure returns (bytes32) {
@@ -70,39 +63,23 @@ library ForsSigner {
 
     /// @dev F: keccak(pkSeed || zero || ADRS || sk || zero) trunc 16. 96 B in.
     function _F(bytes16 pkSeed, bytes32 adrs, bytes16 sk) private pure returns (bytes16) {
-        return bytes16(keccak256(abi.encodePacked(
-            pkSeed, bytes16(0),
-            adrs,
-            sk, bytes16(0)
-        )));
+        return bytes16(keccak256(abi.encodePacked(pkSeed, bytes16(0), adrs, sk, bytes16(0))));
     }
 
     /// @dev H: keccak(pkSeed || zero || ADRS || left || right_padded?) — 128 B.
     ///      Matches the verifier's mstore layout: pkSeed_padded_32 ‖ ADRS_32 ‖
     ///      left_padded_32 ‖ right_padded_32. left and right each occupy a
     ///      32-byte slot with the value in the top 16 and zeros in the bottom.
-    function _H(bytes16 pkSeed, bytes32 adrs, bytes16 left, bytes16 right)
-        private pure returns (bytes16)
-    {
-        return bytes16(keccak256(abi.encodePacked(
-            pkSeed, bytes16(0),
-            adrs,
-            left, bytes16(0),
-            right, bytes16(0)
-        )));
+    function _H(bytes16 pkSeed, bytes32 adrs, bytes16 left, bytes16 right) private pure returns (bytes16) {
+        return bytes16(keccak256(abi.encodePacked(pkSeed, bytes16(0), adrs, left, bytes16(0), right, bytes16(0))));
     }
 
     // ─────────────────────────── Tree builder ──────────────────────────
 
     /// @dev Build tree `t` into `tree`. Heap layout: leaves at 32..63, root at 1.
-    function _buildTreeInto(
-        bytes16 skSeed,
-        bytes16 pkSeed,
-        uint256 t,
-        bytes16[TREE_NODES] memory tree
-    ) private pure {
+    function _buildTreeInto(bytes16 skSeed, bytes16 pkSeed, uint256 t, bytes16[TREE_NODES] memory tree) private pure {
         // Leaves: index 32..63, leaf l → tree[32 + l]
-        uint256 nLeaves = uint256(1) << FORS_A;  // 32
+        uint256 nLeaves = uint256(1) << FORS_A; // 32
         for (uint256 l = 0; l < nLeaves; l++) {
             bytes32 adrs = _adrsLeaf(t, l);
             bytes16 sk = _PRF(skSeed, adrs);
@@ -112,10 +89,10 @@ library ForsSigner {
         // indices [2^(A-h), 2*2^(A-h)). Parent of node `idx` is `idx/2`.
         for (uint256 h = 1; h <= FORS_A; h++) {
             uint256 nodesAtLevel = uint256(1) << (FORS_A - h);
-            uint256 levelStart   = nodesAtLevel;          // = 2^(A-h)
+            uint256 levelStart = nodesAtLevel; // = 2^(A-h)
             for (uint256 p = 0; p < nodesAtLevel; p++) {
-                uint256 idx   = levelStart + p;
-                bytes16 left  = tree[idx * 2];
+                uint256 idx = levelStart + p;
+                bytes16 left = tree[idx * 2];
                 bytes16 right = tree[idx * 2 + 1];
                 tree[idx] = _H(pkSeed, _adrsNode(t, h, p), left, right);
             }
@@ -143,23 +120,26 @@ library ForsSigner {
         // padded to 32 bytes — total (K+1)*32 bytes, matching the verifier.
         bytes memory buf = new bytes((FORS_K + 1) * 32);
         // pkSeed_padded at [0..32)
-        for (uint256 b = 0; b < 16; b++) buf[b] = k.pkSeed[b];
+        for (uint256 b = 0; b < 16; b++) {
+            buf[b] = k.pkSeed[b];
+        }
         // ADRS at [32..64)
         bytes32 adrsRoots = _adrsRoots();
-        for (uint256 b = 0; b < 32; b++) buf[32 + b] = adrsRoots[b];
+        for (uint256 b = 0; b < 32; b++) {
+            buf[32 + b] = adrsRoots[b];
+        }
         // Roots padded at [64 + t*32 + 0..16)
         for (uint256 t = 0; t < KM1; t++) {
             bytes16 r = roots[t];
             uint256 off = 64 + t * 32;
-            for (uint256 b = 0; b < 16; b++) buf[off + b] = r[b];
+            for (uint256 b = 0; b < 16; b++) {
+                buf[off + b] = r[b];
+            }
         }
         k.pkRoot = bytes16(keccak256(buf));
 
         // address = keccak(pkSeed_padded || pkRoot_padded)[12:32].
-        k.addr = address(uint160(uint256(keccak256(abi.encodePacked(
-            k.pkSeed, bytes16(0),
-            k.pkRoot, bytes16(0)
-        )))));
+        k.addr = address(uint160(uint256(keccak256(abi.encodePacked(k.pkSeed, bytes16(0), k.pkRoot, bytes16(0))))));
     }
 
     /// @dev Sign `digest` with `k`. Produces a FORS_SIG_LEN blob that verifies
@@ -172,19 +152,15 @@ library ForsSigner {
         // (read at position (K-1)·A) are zero.
         uint256 maskBits = (uint256(1) << FORS_A) - 1;
         uint256 shiftBits = (FORS_K - 1) * FORS_A;
-        uint256 maxIter  = uint256(1) << (FORS_A + 6); // 64× expected, ample
+        uint256 maxIter = uint256(1) << (FORS_A + 6); // 64× expected, ample
         bytes16 counter;
         bytes32 dVal;
         bool found;
         for (uint256 i = 0; i < maxIter; i++) {
             counter = bytes16(uint128(i));
-            dVal = keccak256(abi.encodePacked(
-                k.pkSeed, bytes16(0),
-                R, bytes16(0),
-                digest,
-                bytes32(FORS_DOM),
-                counter, bytes16(0)
-            ));
+            dVal = keccak256(
+                abi.encodePacked(k.pkSeed, bytes16(0), R, bytes16(0), digest, bytes32(FORS_DOM), counter, bytes16(0))
+            );
             if ((uint256(dVal) >> shiftBits) & maskBits == 0) {
                 found = true;
                 break;
@@ -194,8 +170,12 @@ library ForsSigner {
 
         blob = new bytes(FORS_SIG_LEN);
         // R at [0..16), pkSeed at [16..32)
-        for (uint256 b = 0; b < 16; b++) blob[b] = R[b];
-        for (uint256 b = 0; b < 16; b++) blob[16 + b] = k.pkSeed[b];
+        for (uint256 b = 0; b < 16; b++) {
+            blob[b] = R[b];
+        }
+        for (uint256 b = 0; b < 16; b++) {
+            blob[16 + b] = k.pkSeed[b];
+        }
 
         // For each tree t in 0..K-2: extract sk for revealed leaf + auth path.
         uint256 KM1 = FORS_K - 1;
@@ -210,7 +190,9 @@ library ForsSigner {
 
             // sk = PRF(skSeed, ADRS_leaf(t, mdT))
             bytes16 sk = _PRF(k.skSeed, _adrsLeaf(t, mdT));
-            for (uint256 b = 0; b < 16; b++) blob[treeOff + b] = sk[b];
+            for (uint256 b = 0; b < 16; b++) {
+                blob[treeOff + b] = sk[b];
+            }
 
             // Auth path: walk up from leaf at index (32 + mdT), at each level
             // record the sibling, then move to the parent.
@@ -218,13 +200,17 @@ library ForsSigner {
             for (uint256 j = 0; j < FORS_A; j++) {
                 bytes16 sib = tree[idx ^ 1];
                 uint256 dst = treeOff + 16 + j * 16;
-                for (uint256 b = 0; b < 16; b++) blob[dst + b] = sib[b];
+                for (uint256 b = 0; b < 16; b++) {
+                    blob[dst + b] = sib[b];
+                }
                 idx >>= 1;
             }
         }
 
         // Counter at [COUNTER_OFFSET..COUNTER_OFFSET+16)
-        for (uint256 b = 0; b < 16; b++) blob[FORS_COUNTER_OFFSET + b] = counter[b];
+        for (uint256 b = 0; b < 16; b++) {
+            blob[FORS_COUNTER_OFFSET + b] = counter[b];
+        }
     }
 }
 
@@ -242,12 +228,8 @@ contract ForsVerifierGasTest is Test {
     ///      will not find a sensible address in the result, but it will
     ///      execute the full tree-open path before producing one — which
     ///      is what we want to measure.
-    function _craftGasBlob(bytes32 digest, bytes32 salt)
-        internal
-        pure
-        returns (bytes memory blob)
-    {
-        bytes16 R      = bytes16(keccak256(abi.encode("R", salt)));
+    function _craftGasBlob(bytes32 digest, bytes32 salt) internal pure returns (bytes memory blob) {
+        bytes16 R = bytes16(keccak256(abi.encode("R", salt)));
         bytes16 pkSeed = bytes16(keccak256(abi.encode("pkSeed", salt)));
 
         // Grind in assembly using FMP-rooted scratch — Solidity's
@@ -257,19 +239,19 @@ contract ForsVerifierGasTest is Test {
         // region. Memory-safe.
         uint256 counterWord;
         {
-            uint256 R_w      = uint256(uint128(R)) << 128;
+            uint256 R_w = uint256(uint128(R)) << 128;
             uint256 pkSeed_w = uint256(uint128(pkSeed)) << 128;
-            uint256 dom      = FORS_DOM;
+            uint256 dom = FORS_DOM;
             uint256 maskBits = (uint256(1) << FORS_A) - 1;
             uint256 shiftBits = (FORS_K - 1) * FORS_A;
-            uint256 maxIter  = uint256(1) << (FORS_A + 4); // 16× expected
+            uint256 maxIter = uint256(1) << (FORS_A + 4); // 16× expected
             bool found;
             assembly ("memory-safe") {
                 let scratch := mload(0x40)
-                mstore(scratch,             pkSeed_w)
-                mstore(add(scratch, 0x20),  R_w)
-                mstore(add(scratch, 0x40),  digest)
-                mstore(add(scratch, 0x60),  dom)
+                mstore(scratch, pkSeed_w)
+                mstore(add(scratch, 0x20), R_w)
+                mstore(add(scratch, 0x40), digest)
+                mstore(add(scratch, 0x60), dom)
                 for { let i := 0 } lt(i, maxIter) { i := add(i, 1) } {
                     let c := shl(128, i)
                     mstore(add(scratch, 0x80), c)
@@ -287,9 +269,13 @@ contract ForsVerifierGasTest is Test {
 
         blob = new bytes(FORS_SIG_LEN);
         // R at [0..16)
-        for (uint256 i = 0; i < 16; i++) blob[i] = R[i];
+        for (uint256 i = 0; i < 16; i++) {
+            blob[i] = R[i];
+        }
         // pkSeed at [16..32)
-        for (uint256 i = 0; i < 16; i++) blob[16 + i] = pkSeed[i];
+        for (uint256 i = 0; i < 16; i++) {
+            blob[16 + i] = pkSeed[i];
+        }
         // Tree section: random fill — auth-path correctness is irrelevant
         // for gas; only the work the verifier performs matters.
         for (uint256 t = 0; t < FORS_K - 1; t++) {
