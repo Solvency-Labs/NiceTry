@@ -32,14 +32,21 @@ deliberately abstract.
 The `agent/phase4-integration` branch contains a complete Lean refinement proof
 for the reviewed optimized-Yul transcription of `ForsVerifier.recover`.
 
+- [Plain-English safety briefing](docs/antonio-briefing.md)
 - [Reviewer-facing verification report](verity/NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
 - [Verification workspace README](verity/README.md)
 - Reproduce with `./scripts/audit-fors-verifier.sh`
+- Check a deployment with
+  `./scripts/check-deployed-fors-verifier.sh RPC_URL VERIFIER_ADDRESS`
 
 The final theorem covers dispatcher and ABI guards, rejection paths, all 25
 FORS tree openings, roots compression, and address return. Its project trust
 base is exactly `evm_keccak_transcript` and `ffi_kec_size`. The optimized-IR to
 EVMYulLean transcription remains an explicit review boundary.
+
+Important: `recover` returns the address implied by the signature. Safe callers
+must require both a nonzero result and equality to the expected current owner.
+The proof does not make accepting any nonzero recovered address safe.
 
 ## Contract Layout
 

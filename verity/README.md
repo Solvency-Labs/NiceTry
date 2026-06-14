@@ -6,6 +6,8 @@ the FORS+C recovery model.
 
 Start with:
 
+- [`../docs/antonio-briefing.md`](../docs/antonio-briefing.md) for the
+  plain-English production verdict and go/no-go checklist;
 - [`NiceTry/Fors/Bridge/VERIFICATION_REPORT.md`](NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
   for the reviewer-facing claim, assumptions, provenance, and sign-off request;
 - [`NiceTry/Fors/Bridge/PICKUP.md`](NiceTry/Fors/Bridge/PICKUP.md) for the
@@ -51,6 +53,10 @@ The source-to-runtime link is a review boundary: `forsVerifierRuntime` is a
 pinned transcription of `forge inspect ... irOptimized`, not an AST generated
 by a kernel-checked Solidity compiler bridge. The audit script detects drift
 but does not claim semantic equality from hashes alone.
+
+The theorem covers the verifier component. A production deployment must also
+prove bytecode identity, compare the recovered address to the expected owner,
+and enforce the FORS few-time-key lifecycle.
 
 ## Reproduce
 
