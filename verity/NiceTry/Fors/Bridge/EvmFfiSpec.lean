@@ -17,10 +17,10 @@ that into this small trusted spec — the minimal TCB additions for Class-M. The
 are total-correctness specs of EVM memory primitives, NOT cryptographic
 assumptions, so they don't touch the soundness story.
 
-Separately note the model itself has TWO unconnected opaque keccak families —
-transcript-level (`keccakWord`/`keccakHash16`/`keccakAddress`, where the proved
-theorems live) and memory-level (`keccakWordFromMemory`/…). The equivalence must
-bridge: EVM bytes → memory-call → transcript. See `CLASS-M.md`.
+The transcript model now has one opaque `keccakWord`; `keccakHash16` and
+`keccakAddress` are proved masks of that shared word. `TranscriptEncoding.lean`
+provides the canonical EVM-byte encoding, and `evm_keccak_transcript` is the
+single remaining cryptographic bridge. See `CLASS-M.md`.
 -/
 
 namespace NiceTry.Fors.Bridge

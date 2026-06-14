@@ -26,8 +26,6 @@ def HMsgHashLen : Nat := 0xa0
 def ForsDomainWord : Nat :=
   0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD
 def ForsRootsAdrsWord : Nat := 4 * 2 ^ 128
-def Lower160Mask : Nat := 2 ^ 160 - 1
-
 opaque keccakWordFromMemory : KeccakMemoryCall -> Word
 opaque keccakAddressFromMemory : KeccakMemoryCall -> Address
 

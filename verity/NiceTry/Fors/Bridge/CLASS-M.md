@@ -5,7 +5,8 @@ the plan; both are honest TCB facts Antonio should see.
 
 ## Finding 1 — three layers, two gaps (the model isn't end-to-end)
 
-The FORS model has **two opaque keccak families that are never related**:
+The FORS model originally had **two opaque keccak families that were never
+related**:
 
 ```
 EVM execution            model memory layer            model transcript layer
@@ -40,10 +41,14 @@ padding, not crypto. Plus trusted `ffi.KEC` (keccak).
 
 Current Bridge shape status: Gap-A byte equality is proved for address, hmsg,
 leaf, node, and the roots-compression buffer (with abstract per-tree root
-values). Gap-B is still explicit trust, localized as labeled `evm_keccak_*`
-axioms in `AddressShape.lean` (`address`, `hmsg`, `leaf`, `node`, `roots`).
-These axioms bundle keccak correctness plus byte/value transcript encoding and
-masking until the planned Gap-B split replaces the encoding parts with proof.
+values). The Phase 5 Gap-B split is complete:
+
+* `TranscriptEncoding.lean` defines `encodeTranscript` and proves all five
+  concrete EVM word sequences equal their abstract transcript encodings.
+* `Hash.lean` has one opaque `keccakWord`; `keccakHash16` and `keccakAddress` are
+  definitions that apply the proved high-128/low-160 masks.
+* `AddressShape.lean` has one generic trust item,
+  `evm_keccak_transcript`, replacing the five bundled shape axioms.
 The FORS tree-climb loop now proves that the 25 roots written into the roots
 buffer are exactly the model chain values. The post-loop handoff is
 named: establish `pkSeed` at `0x00` and the 25-root buffer at `0x40..0x35f`, then
@@ -89,11 +94,10 @@ shape if a specific proof proves intractable.
 
 ## Concrete next steps (route i)
 
-> **Status update:** steps 1–3 below are now **done** (the `ByteArray` library,
-> Gap-A per shape for address/hmsg/leaf/node/roots, and Gap-B as the labeled
-> `evm_keccak_*` axioms all landed on `evmrun-runtime`). The live remaining work is
-> step 4 — assembling `RefinesModel evmRun`, gated on the FORS tree-loop execution
-> proof. See [`PICKUP.md`](./PICKUP.md) §3 (WS-3, WS-4) for the current frontier.
+> **Status update:** steps 1–4 below are now **done** for the deployed contract.
+> Phase 5 then narrowed Gap B from five bundled shape axioms to the single
+> `evm_keccak_transcript` assumption over a proved canonical encoder. See
+> [`PICKUP.md`](./PICKUP.md) for the current trust-reduction frontier.
 > The list below is kept as the original route-i plan of record.
 
 1. `ByteArray` lemma library: `size_append`, `writeWord` size/`get`, single-word

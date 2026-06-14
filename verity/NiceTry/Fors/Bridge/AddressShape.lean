@@ -1,4 +1,4 @@
-import NiceTry.Fors.Bridge.EvmMemory
+import NiceTry.Fors.Bridge.TranscriptEncoding
 
 /-!
 # Address-transcript equivalence — the completed Gap-A + Gap-B template
@@ -17,19 +17,76 @@ namespace NiceTry.Fors.Bridge
 open EvmYul
 open NiceTry.Fors
 
-/-! ## Trusted keccak bridge (the intended "keccak is correct" assumption)
+/-! ## Trusted Keccak bridge
 
-NOTE: this axiom currently bundles two things — (i) keccak correctness (`ffi.KEC`
-is the hash the model's opaque `keccakAddress`/`addressFromRoot` denotes), the
-trust we always intended; and (ii) the value/encoding correspondence between the
-EVM 32-byte words and the model's `Hash16` arguments (the 16-byte top-half
-masking, i.e. Gap B). A future refinement can split (ii) out into a proof against
-an `encodeTranscript` definition, leaving a purer keccak-only axiom. Folded here
-to complete the end-to-end template. -/
-axiom evm_keccak_address (b : ByteArray) (pkSeed pkRoot : UInt256)
+The sole cryptographic bridge is generic and stated over the canonical
+transcript encoder. All shape-specific word encoding and output masking below
+are proved in Lean. -/
+axiom evm_keccak_transcript (fields : List TranscriptField) :
+    fromByteArrayBigEndian (ffi.KEC (encodeTranscript fields)) =
+      keccakWord fields
+
+theorem evm_keccak_address (b : ByteArray) (pkSeed pkRoot : UInt256)
     (h : b = pkSeed.toByteArray ++ pkRoot.toByteArray) :
     (fromByteArrayBigEndian (ffi.KEC b)) &&& Lower160Mask
-      = addressFromRoot pkSeed.toNat pkRoot.toNat
+      = addressFromRoot pkSeed.toNat pkRoot.toNat := by
+  rw [h, ← encodeTranscript_address, evm_keccak_transcript]
+  rfl
+
+theorem evm_keccak_hmsg (b : ByteArray) (pkSeed r digest domain counter : UInt256)
+    (hdomain : domain.toNat = ForsDomainWord)
+    (h : b.data = concatData ([pkSeed, r, digest, domain, counter].map UInt256.toByteArray)) :
+    fromByteArrayBigEndian (ffi.KEC b) =
+      hMsg pkSeed.toNat r.toNat digest.toNat counter.toNat := by
+  have hb : b = encodeTranscript
+      (hMsgTranscript pkSeed.toNat r.toNat digest.toNat counter.toNat) := by
+    apply ByteArray.ext
+    rw [encodeTranscript_hmsg pkSeed r digest domain counter hdomain]
+    exact h
+  rw [hb, evm_keccak_transcript]
+  rfl
+
+theorem evm_keccak_leaf (b : ByteArray) (pkSeed adrs sk : UInt256) (tree leafIdx : Nat)
+    (hadrs : adrs.toNat = shapeLeafAdrsWord tree leafIdx)
+    (h : b.data = concatData ([pkSeed, adrs, sk].map UInt256.toByteArray)) :
+    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
+      leafHash pkSeed.toNat (leafAdrs tree leafIdx) sk.toNat := by
+  have hb : b = encodeTranscript
+      (leafTranscript pkSeed.toNat (leafAdrs tree leafIdx) sk.toNat) := by
+    apply ByteArray.ext
+    rw [encodeTranscript_leaf pkSeed adrs sk tree leafIdx hadrs]
+    exact h
+  rw [hb, evm_keccak_transcript]
+  rfl
+
+theorem evm_keccak_node (b : ByteArray) (pkSeed adrs left right : UInt256)
+    (tree height parentIdx : Nat)
+    (hadrs : adrs.toNat = shapeNodeAdrsWord tree height parentIdx)
+    (h : b.data = concatData ([pkSeed, adrs, left, right].map UInt256.toByteArray)) :
+    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
+      nodeHash pkSeed.toNat (nodeAdrs tree height parentIdx) left.toNat right.toNat := by
+  have hb : b = encodeTranscript
+      (nodeTranscript pkSeed.toNat (nodeAdrs tree height parentIdx)
+        left.toNat right.toNat) := by
+    apply ByteArray.ext
+    rw [encodeTranscript_node pkSeed adrs left right tree height parentIdx hadrs]
+    exact h
+  rw [hb, evm_keccak_transcript]
+  rfl
+
+theorem evm_keccak_roots (b : ByteArray) (pkSeed rootsAdrs : UInt256)
+    (roots : TreeIndex → UInt256)
+    (hadrs : rootsAdrs.toNat = ForsRootsAdrsWord)
+    (h : b.data = concatData (rootsBufferBytes pkSeed rootsAdrs roots)) :
+    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
+      compressRoots pkSeed.toNat (fun i => (roots i).toNat) := by
+  have hb : b = encodeTranscript
+      (rootsTranscript pkSeed.toNat (fun i => (roots i).toNat)) := by
+    apply ByteArray.ext
+    rw [encodeTranscript_roots pkSeed rootsAdrs roots hadrs]
+    exact h
+  rw [hb, evm_keccak_transcript]
+  rfl
 
 theorem addressFromRoot_lt_lower160 (pkSeed pkRoot : UInt256) :
     addressFromRoot pkSeed.toNat pkRoot.toNat < 2 ^ 160 := by
@@ -44,42 +101,6 @@ theorem addressFromRoot_lt_lower160 (pkSeed pkRoot : UInt256) :
     _ < 2 ^ 160 := by
       unfold Lower160Mask
       omega
-
-/-! ## Trusted keccak bridges for the next Class-M shapes
-
-Like `evm_keccak_address`, these axioms deliberately isolate the opaque keccak
-step plus the byte/value transcript correspondence. The input-byte facts they
-consume (`*_keccak_input_overwrite`) are proved in `EvmMemory.lean`; the axioms
-only say that hashing those bytes denotes the model transcript hash. A future
-Gap-B split should replace the encoding/masking parts with proved lemmas and
-leave keccak itself opaque.
--/
-
-axiom evm_keccak_hmsg (b : ByteArray) (pkSeed r digest domain counter : UInt256)
-    (hdomain : domain.toNat = ForsDomainWord)
-    (h : b.data = concatData ([pkSeed, r, digest, domain, counter].map UInt256.toByteArray)) :
-    fromByteArrayBigEndian (ffi.KEC b) =
-      hMsg pkSeed.toNat r.toNat digest.toNat counter.toNat
-
-axiom evm_keccak_leaf (b : ByteArray) (pkSeed adrs sk : UInt256) (tree leafIdx : Nat)
-    (hadrs : adrs.toNat = shapeLeafAdrsWord tree leafIdx)
-    (h : b.data = concatData ([pkSeed, adrs, sk].map UInt256.toByteArray)) :
-    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
-      leafHash pkSeed.toNat (leafAdrs tree leafIdx) sk.toNat
-
-axiom evm_keccak_node (b : ByteArray) (pkSeed adrs left right : UInt256)
-    (tree height parentIdx : Nat)
-    (hadrs : adrs.toNat = shapeNodeAdrsWord tree height parentIdx)
-    (h : b.data = concatData ([pkSeed, adrs, left, right].map UInt256.toByteArray)) :
-    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
-      nodeHash pkSeed.toNat (nodeAdrs tree height parentIdx) left.toNat right.toNat
-
-axiom evm_keccak_roots (b : ByteArray) (pkSeed rootsAdrs : UInt256)
-    (roots : TreeIndex → UInt256)
-    (hadrs : rootsAdrs.toNat = ForsRootsAdrsWord)
-    (h : b.data = concatData (rootsBufferBytes pkSeed rootsAdrs roots)) :
-    (fromByteArrayBigEndian (ffi.KEC b)) &&& NMaskWord =
-      compressRoots pkSeed.toNat (fun i => (roots i).toNat)
 
 /-- **Address-shape equivalence (template).** The contract's keccak-and-mask
     address derivation, run over EVMYulLean memory after the two address `mstore`s,

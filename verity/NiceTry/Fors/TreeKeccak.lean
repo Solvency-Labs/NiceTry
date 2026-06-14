@@ -17,8 +17,6 @@ def ScratchLeftOffset : Nat := 0x3c0
 def ScratchRightOffset : Nat := 0x3e0
 def LeafHashLen : Nat := 0x60
 def NodeHashLen : Nat := 0x80
-def NMaskWord : Nat := 2 ^ 256 - 2 ^ 128
-
 structure MemoryWord where
   offset : Nat
   value : Nat

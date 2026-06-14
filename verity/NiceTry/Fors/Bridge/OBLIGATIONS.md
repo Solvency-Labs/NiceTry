@@ -119,13 +119,15 @@ selector + head/tail bytes encoding, `RawSig.read16 off = mem-word(payload+off) 
   `MachineStateOps.lean`; reason about the byte map after a `mstore` sequence.
 - Keccak: `EvmYul/SpongeHash/*` is the trusted primitive. **We do not prove keccak** —
   we prove its *input region* equals the transcript, then treat the digest as opaque,
-  matching `opaque keccakWord/keccakHash16/keccakAddress` in `Fors/Hash.lean`.
+  matching the shared opaque `keccakWord` and its defined hash/address masks in
+  `Fors/Hash.lean`.
 
-The bridging axioms to state explicitly (and keep auditable): EVMYulLean
-`keccak256(off,len)` over a region equal to `encode(fields)` = the model's
-`keccakWord/Hash16/Address fields`. In the current Bridge these are the labeled
-`evm_keccak_*` axioms in `AddressShape.lean`; all byte-region facts feeding them
-are mechanical memory reasoning. The roots bridge covers the 27-word compression
+The bridging axiom to state explicitly (and keep auditable): EVMYulLean
+`keccak256(off,len)` over a region equal to `encodeTranscript fields` = the
+model's `keccakWord fields`. The current Bridge uses the single
+`evm_keccak_transcript` axiom in `AddressShape.lean`; all five concrete
+encodings, byte-region facts, and output masks are proved. The roots bridge
+covers the 27-word compression
 input, and `TreeLoop.lean` now proves that the real loop computes and writes the
 required 25 root values. The current assembly target is
 `roots_derivation_eq_after_loop_buffer_init`: composing those values with the

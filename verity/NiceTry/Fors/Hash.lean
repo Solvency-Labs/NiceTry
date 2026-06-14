@@ -15,8 +15,20 @@ inductive TranscriptField where
 deriving DecidableEq, Repr
 
 opaque keccakWord : List TranscriptField -> Word
-opaque keccakHash16 : List TranscriptField -> Hash16
-opaque keccakAddress : List TranscriptField -> Address
+
+/-- The verifier keeps the high 16 bytes of leaf/node/root Keccak outputs. -/
+def NMaskWord : Nat := 2 ^ 256 - 2 ^ 128
+
+/-- The final signer address keeps the low 160 bits of its Keccak output. -/
+def Lower160Mask : Nat := 2 ^ 160 - 1
+
+/-- A model `Hash16` is the high-16-byte mask of the shared Keccak word. -/
+def keccakHash16 (fields : List TranscriptField) : Hash16 :=
+  keccakWord fields &&& NMaskWord
+
+/-- A model address is the low-160-bit mask of the shared Keccak word. -/
+def keccakAddress (fields : List TranscriptField) : Address :=
+  keccakWord fields &&& Lower160Mask
 
 def hMsgTranscript
     (pkSeed : Hash16)
@@ -41,33 +53,7 @@ def nodeTranscript
   [.pad16 pkSeed, .adrs32 adrs, .pad16 left, .pad16 right]
 
 def rootFields (roots : TreeIndex -> Hash16) : List TranscriptField :=
-  [
-    .pad16 (roots (Fin.mk 0 (by decide))),
-    .pad16 (roots (Fin.mk 1 (by decide))),
-    .pad16 (roots (Fin.mk 2 (by decide))),
-    .pad16 (roots (Fin.mk 3 (by decide))),
-    .pad16 (roots (Fin.mk 4 (by decide))),
-    .pad16 (roots (Fin.mk 5 (by decide))),
-    .pad16 (roots (Fin.mk 6 (by decide))),
-    .pad16 (roots (Fin.mk 7 (by decide))),
-    .pad16 (roots (Fin.mk 8 (by decide))),
-    .pad16 (roots (Fin.mk 9 (by decide))),
-    .pad16 (roots (Fin.mk 10 (by decide))),
-    .pad16 (roots (Fin.mk 11 (by decide))),
-    .pad16 (roots (Fin.mk 12 (by decide))),
-    .pad16 (roots (Fin.mk 13 (by decide))),
-    .pad16 (roots (Fin.mk 14 (by decide))),
-    .pad16 (roots (Fin.mk 15 (by decide))),
-    .pad16 (roots (Fin.mk 16 (by decide))),
-    .pad16 (roots (Fin.mk 17 (by decide))),
-    .pad16 (roots (Fin.mk 18 (by decide))),
-    .pad16 (roots (Fin.mk 19 (by decide))),
-    .pad16 (roots (Fin.mk 20 (by decide))),
-    .pad16 (roots (Fin.mk 21 (by decide))),
-    .pad16 (roots (Fin.mk 22 (by decide))),
-    .pad16 (roots (Fin.mk 23 (by decide))),
-    .pad16 (roots (Fin.mk 24 (by decide)))
-  ]
+  (List.ofFn roots).map .pad16
 
 def rootsTranscript
     (pkSeed : Hash16)
