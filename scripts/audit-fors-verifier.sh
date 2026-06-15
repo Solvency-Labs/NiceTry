@@ -52,8 +52,8 @@ check_hash "compiled deployed runtime codehash" "$EXPECTED_DEPLOYED_CODEHASH" \
   "$(cast keccak "$(forge inspect src/Verifiers/ForsVerifier.sol:ForsVerifier deployedBytecode)")"
 
 declared_axioms="$(
-  rg -n -P "^[\\t ]*axiom[\\t ]+[A-Za-z_][A-Za-z0-9_!?']*" \
-    verity/NiceTry/Fors/Bridge --glob '*.lean'
+  find verity/NiceTry/Fors/Bridge -type f -name '*.lean' \
+    -exec grep -nH -E "^[[:space:]]*axiom[[:space:]]+[A-Za-z_][A-Za-z0-9_!?']*" {} +
 )"
 axiom_count="$(printf '%s\n' "$declared_axioms" | wc -l | tr -d ' ')"
 if [[ "$axiom_count" != "2" ]]; then
