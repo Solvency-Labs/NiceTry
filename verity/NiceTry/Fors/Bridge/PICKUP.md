@@ -1,10 +1,13 @@
 # FORS+C verifier bridge — START HERE (pick-up guide)
 
-## Current checkpoint (2026-06-14) — Phase 4 complete through the reviewed dispatcher transcription
+## Current checkpoint (2026-06-15) — pinned optimized Yul refinement complete
 
 - **Final theorem:** `Phase4.phase4_forsRefines : ForsRefines` proves that the
-  reviewed optimized-IR runtime transcription agrees with `recoverRaw?` on
-  `ForsAbiInput`.
+  full runtime agrees with `recoverRaw?` on `ForsAbiInput`.
+- **Compiler artifact linked:** `ParsedRuntime.pinned_optimized_yul_refines`
+  proves that the total Lean parser imports the tracked raw optimized-Yul
+  artifact to the runtime used by `phase4_forsRefines`. The former manual
+  Yul-to-EVMYulLean transcription boundary is closed.
 - **ABI domain fixed honestly:** `RawDomain.lean` now defines `ForsAbiInput` as
   representable length + packed 16-byte fields + a bytes32-sized digest. The old
   length-only statement was false for unbounded model `Nat` values because ABI
@@ -23,10 +26,11 @@
 - **Fuel is exact:** `recoverFuel = 99983`, exactly the fuel received by
   `fun_recover` inside `runForsCalldata ... 100000`; no fuel-monotonicity axiom
   was added.
-- **Build/audit:** `lake build NiceTry` passes all 1172 modules.
-  `#print axioms phase4_forsRefines` reports Lean core plus exactly 2 project
-  axioms: `evm_keccak_transcript` and `ffi_kec_size`. There is no dispatcher,
-  padding, codec, or numeric keccak-bound axiom and no `sorryAx`.
+- **Build/audit:** `lake build NiceTry` and
+  `lake env lean NiceTry/Fors/Bridge/Audit.lean` are the release checks.
+  `#print axioms pinned_optimized_yul_refines` reports Lean core plus exactly 2
+  project axioms: `evm_keccak_transcript` and `ffi_kec_size`. There is no parser,
+  dispatcher, padding, codec, or numeric keccak-bound axiom and no `sorryAx`.
 - **Obligation accounting (2026-06-13): 9 of 11 discharged; last 2 held as a
   documented boundary.** All keccak-transcript memory obligations (#1–#5, #7, #8)
   and both Class-A calldata obligations (#6, #11) are now `proved`, each backed by
@@ -42,7 +46,8 @@
   all zero-padding and word-codec facts are now theorems, and the generic
   keccak numeric bound is derived from the sole FFI shape fact
   `(ffi.KEC b).size = 32`.
-- **Next:** upstream a public word-codec theorem to remove the private-name
+- **Next:** verify deployment bytecode against the pinned compiler output and
+  upstream a public word-codec theorem to remove the private-name
   maintenance hook, and decide whether to retain `ffi_kec_size` as the honest
   extern-C contract or connect the FFI to a modeled Keccak implementation. The
   last 2 kernel obligations are out
@@ -58,7 +63,7 @@
   `state_getElem_finsert_ne` (Finmap form) won't match a `State.insert` chain — use a `show`
   to the collapsed `Ok a (vs.insert ...)` form (defeq by rfl) first. `exec_let_lit` produces
   `vars.head!` keys; clean with `simp only [List.head!_cons]`.
-- **Build:** `lake build NiceTry` passes all 1172 modules on
+- **Build:** `lake build NiceTry` passes on
   `agent/phase4-integration`.
 
 ## Trust surface (2 labeled axioms declared; Phase 4 uses both)
@@ -722,7 +727,9 @@ with **2 labeled project axioms declared** on this branch (verify with
 
 > Net: the per-shape "every hash step is the right one" guarantee is **proved**.
 > The complete reviewed runtime-execution spine connecting those steps is also
-> **proved**. Source-to-transcription correspondence remains a review boundary.
+> **proved**. Source-to-runtime correspondence is now closed by
+> `parse_pinned_fors_runtime`; pinned-compiler correctness and deployment
+> bytecode identity remain external boundaries.
 
 ## 3. What is OPEN — the remaining frontier
 

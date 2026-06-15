@@ -30,7 +30,8 @@ deliberately abstract.
 ## FORS+C Formal Verification
 
 The `agent/phase4-integration` branch contains a complete Lean refinement proof
-for the reviewed optimized-Yul transcription of `ForsVerifier.recover`.
+for the `ForsVerifier.recover` runtime parsed from pinned `solc 0.8.30`
+optimized Yul.
 
 - [Plain-English safety briefing](docs/antonio-briefing.md)
 - [Reviewer-facing verification report](verity/NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
@@ -41,8 +42,10 @@ for the reviewed optimized-Yul transcription of `ForsVerifier.recover`.
 
 The final theorem covers dispatcher and ABI guards, rejection paths, all 25
 FORS tree openings, roots compression, and address return. Its project trust
-base is exactly `evm_keccak_transcript` and `ffi_kec_size`. The optimized-IR to
-EVMYulLean transcription remains an explicit review boundary.
+base is exactly `evm_keccak_transcript` and `ffi_kec_size`. A total Lean parser
+proves that the tracked optimized-Yul artifact imports to exactly the
+EVMYulLean runtime used by the execution proof. `solc` and deployed-bytecode
+identity remain explicit boundaries.
 
 Important: `recover` returns the address implied by the signature. Safe callers
 must require both a nonzero result and equality to the expected current owner.

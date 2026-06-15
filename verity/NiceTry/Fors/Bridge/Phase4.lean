@@ -45,7 +45,7 @@ theorem evmRun_accept
   rw [evmRun_eq_recover_of_sigLen raw digest hlen]
   exact evmRunRecover_accept raw digest hlen hwf hdigest hfz
 
-/-- **Phase 4 complete.** The reviewed optimized-IR runtime transcription
+/-- **Phase 4 complete.** The EVMYulLean runtime
     refines the Lean recovery model on the exact ABI-representable input domain. -/
 theorem phase4_forsRefines : ForsRefines :=
   forsRefines_of_branches evmRun_bad_length

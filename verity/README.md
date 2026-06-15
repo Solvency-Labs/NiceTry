@@ -1,8 +1,8 @@
 # FORS+C Verifier Formal Verification
 
 This directory contains the Lean proof that the complete EVMYulLean execution
-of the reviewed optimized-Yul transcription of `ForsVerifier.recover` refines
-the FORS+C recovery model.
+of the runtime parsed from pinned `ForsVerifier` optimized Yul refines the
+FORS+C recovery model.
 
 Start with:
 
@@ -20,6 +20,15 @@ Start with:
 ```lean
 NiceTry.Fors.Bridge.phase4_forsRefines :
   NiceTry.Fors.Bridge.ForsRefines
+```
+
+The compiler-artifact theorem is:
+
+```lean
+NiceTry.Fors.Bridge.pinned_optimized_yul_refines :
+  ∃ runtime,
+    parseDeployedRuntime pinnedForsOptimizedYul = .ok runtime ∧
+    ForsRuntimeRefines runtime
 ```
 
 Expanded:
@@ -49,10 +58,13 @@ The final theorem depends on Lean core plus exactly two project axioms:
 Padding, word encoding/decoding, the Keccak numeric bound, dispatcher routing,
 and the complete interpreter traces are proved.
 
-The source-to-runtime link is a review boundary: `forsVerifierRuntime` is a
-pinned transcription of `forge inspect ... irOptimized`, not an AST generated
-by a kernel-checked Solidity compiler bridge. The audit script detects drift
-but does not claim semantic equality from hashes alone.
+The optimized-Yul-to-runtime link is kernel checked. A total Lean parser imports
+the tracked raw `forge inspect ... irOptimized` artifact and proves that the
+result is exactly `forsVerifierRuntime`, the stable scaffold used by the
+execution proof.
+
+The remaining provenance boundaries are pinned `solc 0.8.30` and the requirement
+to compare deployed bytecode with the pinned compiler output.
 
 The theorem covers the verifier component. A production deployment must also
 prove bytecode identity, compare the recovered address to the expected owner,
@@ -105,5 +117,4 @@ This work does not prove:
 - correctness of the off-chain signer;
 - semantic equivalence of arbitrary deployed bytecode to the pinned Solidity
   source;
-- semantic correctness of the manual optimized-IR transcription beyond the
-  explicit review and drift-check boundary.
+- correctness of the Solidity compiler.

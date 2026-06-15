@@ -5,7 +5,7 @@ import NiceTry.Fors.Spec
 /-!
 # `evmRun`: run `forsVerifierRuntime` on calldata via the EVMYulLean interpreter
 
-Runs the reviewed `ForsVerifier` optimized-IR transcription on given calldata
+Runs the `ForsVerifier` runtime scaffold on given calldata
 (codeOverride supplies the helper functions; `execTopLevel` can't be used since
 it hardcodes `.none`), and reads the 32-byte word returned by the contract's
 `RETURN` (in `H_return`).
@@ -63,14 +63,14 @@ def forsPayload (raw : RawSig) : ByteArray :=
 def encodeForsCalldata (raw : RawSig) (digest : Digest) : ByteArray :=
   forsSelector ++ word32 0x40 ++ word32 digest ++ word32 raw.len ++ forsPayload raw
 
-/-- **`evmRun`** — the reviewed runtime transcription's observable behavior:
+/-- **`evmRun`** — the verified runtime scaffold's observable behavior:
     encode calldata, run it, decode the low-160 of the returned word. The contract
     signals failure with `address(0)`, so the codomain is `Address` (not `Option`). -/
 def evmRun (raw : RawSig) (digest : Digest) : Address :=
   ((runForsCalldata (encodeForsCalldata raw digest) 100000).map
     (fun w => w.toNat % 2 ^ 160)).getD 0
 
-/-- **The refinement target for the reviewed runtime transcription.** Note
+/-- **The refinement target for the verified runtime scaffold.** Note
     `none ↔ address(0)`:
     the model returns `none` on bad/not-grinded sigs, the contract returns
     `address(0)`, so this is `.getD 0`, not exact equality. This is the goal the

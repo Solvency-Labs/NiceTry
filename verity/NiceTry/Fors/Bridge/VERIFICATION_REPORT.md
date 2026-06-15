@@ -1,16 +1,16 @@
 # FORS+C Verifier Production Safety Report
 
 **Review target:** Antonio Sanso
-**Date:** 2026-06-14
+**Date:** 2026-06-15
 **Proof branch:** `agent/phase4-integration`
-**Proof checkpoint:** `88f6798`
 
 ## Decision summary
 
 | Question | Answer |
 |---|---|
-| Is the pinned verifier's FORS+C recovery computation correct? | **Yes, formally proved**, subject to the stated Keccak and transcription boundaries. |
+| Is the pinned verifier's FORS+C recovery computation correct? | **Yes, formally proved**, subject to the stated Keccak, compiler, and deployment-identity boundaries. |
 | Does the proof cover the dispatcher, reject paths, and complete 25-tree loop? | **Yes.** |
+| Is the optimized-Yul to EVMYulLean correspondence checked by Lean? | **Yes.** |
 | Does the proof establish that an arbitrary address contains the verified bytecode? | **No. Check each deployment.** |
 | Does the proof establish the security of the signer, wallet, or key rotation? | **No. Those are separate production conditions.** |
 | Is it reasonable to deploy and rely on this verifier? | **Yes, after every item in the production checklist is green.** |
@@ -62,6 +62,15 @@ The exported Lean result is:
 theorem phase4_forsRefines : ForsRefines
 ```
 
+The compiler-artifact result exported for review is:
+
+```lean
+theorem pinned_optimized_yul_refines :
+  ∃ runtime,
+    parseDeployedRuntime pinnedForsOptimizedYul = .ok runtime ∧
+    ForsRuntimeRefines runtime
+```
+
 Expanded:
 
 ```lean
@@ -70,9 +79,10 @@ def ForsRefines : Prop :=
     evmRun raw digest = (recoverRaw? raw digest).getD 0
 ```
 
-In plain language: for every ABI-representable signature and digest, executing
-the complete reviewed verifier runtime returns exactly the address returned by
-the Lean FORS+C recovery model.
+In plain language: Lean parses the tracked optimized-Yul artifact into the
+runtime used by the proof, and for every ABI-representable signature and
+digest, executing that runtime returns exactly the address returned by the Lean
+FORS+C recovery model.
 
 The proof establishes all of the following:
 
@@ -162,8 +172,8 @@ contract called `ForsVerifier`. The deployed bytecode must be checked.
 
 ## Explicit trust boundary
 
-`#print axioms NiceTry.Fors.Bridge.phase4_forsRefines` reports Lean core
-principles plus exactly two project assumptions:
+`#print axioms NiceTry.Fors.Bridge.pinned_optimized_yul_refines` reports Lean
+core principles plus exactly two project assumptions:
 
 1. `evm_keccak_transcript`: Keccak over the proved canonical EVM transcript
    bytes agrees with the model's opaque Keccak value.
@@ -176,10 +186,15 @@ and address derivation are proved.
 
 There is no `sorryAx` in the final theorem's dependency closure.
 
-## Compiler and transcription boundary
+## Compiler and artifact boundary
 
-The proof executes `forsVerifierRuntime` from `Bridge/ForsRuntime.lean`. It was
-reviewed against:
+The tracked raw compiler artifact is:
+
+```text
+verity/artifacts/fors-verifier-runtime/ForsVerifier.irOptimized.yul
+```
+
+It is regenerated with:
 
 ```bash
 forge inspect src/Verifiers/ForsVerifier.sol:ForsVerifier irOptimized
@@ -192,22 +207,31 @@ using:
 - optimizer runs `200`;
 - `via_ir = true`.
 
-The Solidity source, optimized IR, Lean runtime, and compiled deployed runtime
-are fingerprinted. This makes drift visible and the review reproducible.
+The audit requires the regenerated output to be byte-for-byte identical to the
+tracked artifact. A total Lean lexer, recursive-descent parser, validator, and
+importer then prove:
 
-The optimized-Yul to EVMYulLean transcription is still a review boundary. It
-is not yet produced by a kernel-checked parser or compiler certificate. If
-Antonio requires that stronger provenance, the next milestone is to automate
-or certify this link. The FORS execution proof itself does not need to be
-repeated.
+```lean
+parseDeployedRuntime pinnedForsOptimizedYul = .ok forsVerifierRuntime
+```
+
+This theorem is checked by kernel computation. It uses no `native_decide`,
+`run_tac`, FFI parser, external certificate, or new axiom. The former manual
+optimized-Yul to EVMYulLean transcription is no longer a trust boundary.
+
+The remaining compiler provenance assumptions are:
+
+1. pinned `solc 0.8.30` correctly translates the Solidity source to optimized
+   Yul and bytecode;
+2. the deployed bytecode is checked to match that pinned compiler output.
 
 ## Pinned artifact fingerprints
 
 | Artifact | Fingerprint |
 |---|---|
 | `src/Verifiers/ForsVerifier.sol` SHA-256 | `aa6d44b994bdb5877863dd0400252649b03b48116f3da432bf4d932031436faf` |
-| generated optimized IR SHA-256 | `531d8dd32a84ec56961bd4f220fce1466c533e40019e0729b97c6b328de21691` |
-| `Bridge/ForsRuntime.lean` SHA-256 | `ae3412b2f7fb063938456db4b328a407e0061f9f447f56177442f71d0d91507e` |
+| tracked optimized IR SHA-256 | `531d8dd32a84ec56961bd4f220fce1466c533e40019e0729b97c6b328de21691` |
+| `Bridge/ForsRuntime.lean` SHA-256 | `7cd94b5cbbd6bea3a3b022438691ef1bf47ad92f72b3a7d08584f8edfb342a0b` |
 | compiled deployed runtime length | `1,064 bytes` |
 | compiled deployed runtime EVM code hash | `0x41345cf3e55d977f792efdfee943698c695c544d01d28dc0a9412eb7e3fca113` |
 | runtime without 53-byte CBOR metadata EVM code hash | `0x1d49e8f4aa74b30f636d13659f46f59392cc5d6f2da2a2edbba8d66713d857b4` |
@@ -247,16 +271,18 @@ From the repository root:
 
 The script:
 
-1. checks the source, optimized IR, Lean runtime, and compiled runtime code
-   fingerprints;
-2. confirms exactly two declared Bridge axioms;
-3. runs `lake build NiceTry`;
-4. prints the assumptions of the final theorem and supporting lemmas.
+1. checks the source, tracked optimized IR, Lean runtime, and compiled runtime
+   code fingerprints;
+2. requires regenerated optimized Yul to match the tracked artifact
+   byte-for-byte;
+3. confirms exactly two declared Bridge axioms;
+4. runs `lake build NiceTry`;
+5. prints the assumptions of the final theorem and supporting lemmas.
 
 Expected final theorem audit:
 
 ```text
-NiceTry.Fors.Bridge.phase4_forsRefines depends on:
+NiceTry.Fors.Bridge.pinned_optimized_yul_refines depends on:
 propext
 Classical.choice
 Quot.sound
