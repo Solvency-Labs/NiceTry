@@ -8,6 +8,11 @@ Start with:
 
 - [`../docs/antonio-briefing.md`](../docs/antonio-briefing.md) for the
   plain-English production verdict and go/no-go checklist;
+- [`NiceTry/Fors/Bridge/REVIEW_PATH.md`](NiceTry/Fors/Bridge/REVIEW_PATH.md)
+  for the step-by-step path from FORS model to EVMYulLean execution to pinned
+  artifact;
+- [`NiceTry/Fors/Bridge/ReviewSurface.lean`](NiceTry/Fors/Bridge/ReviewSurface.lean)
+  for the small set of theorem statements reviewers should read first;
 - [`NiceTry/Fors/Bridge/VERIFICATION_REPORT.md`](NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
   for the reviewer-facing claim, assumptions, provenance, and sign-off request;
 - [`NiceTry/Fors/Bridge/PICKUP.md`](NiceTry/Fors/Bridge/PICKUP.md) for the
@@ -15,7 +20,24 @@ Start with:
 - [`NiceTry/Fors/Bridge/OBLIGATIONS.md`](NiceTry/Fors/Bridge/OBLIGATIONS.md) for
   the separate auxiliary-kernel obligation accounting.
 
-## Final theorem
+## Review theorem
+
+The reviewer-facing theorem avoids hiding the checked runtime behind an
+existential:
+
+```lean
+NiceTry.Fors.Bridge.pinned_yul_runtime_matches_recover_model :
+  parseDeployedRuntime pinnedForsOptimizedYul = .ok forsVerifierRuntime ∧
+    ∀ raw digest, ForsAbiInput raw digest →
+      evmRunWithRuntime forsVerifierRuntime raw digest =
+        recoverOrZero raw digest
+```
+
+In plain English: the tracked optimized-Yul artifact parses to the runtime Lean
+executes, and that runtime returns the same address as the clean FORS+C recovery
+model, with model failure represented as `address(0)`.
+
+The underlying execution theorem is:
 
 ```lean
 NiceTry.Fors.Bridge.phase4_forsRefines :
@@ -31,7 +53,7 @@ NiceTry.Fors.Bridge.pinned_optimized_yul_refines :
     ForsRuntimeRefines runtime
 ```
 
-Expanded:
+Expanded internally:
 
 ```lean
 ∀ raw digest, ForsAbiInput raw digest →

@@ -44,6 +44,7 @@ lean_lib NiceTry where
     `NiceTry.Fors.Bridge.ForsRuntime,
     `NiceTry.Fors.Bridge.ForsYulArtifact,
     `NiceTry.Fors.Bridge.ParsedRuntime,
+    `NiceTry.Fors.Bridge.ReviewSurface,
     `NiceTry.Fors.Bridge.EvmRun,
     `NiceTry.Fors.Bridge.CalldataBytes,
     `NiceTry.Fors.Bridge.ClassA,

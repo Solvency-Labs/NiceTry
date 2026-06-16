@@ -56,13 +56,35 @@ The repository's `SimpleAccount` uses the safe comparison.
 
 ## What is formally proved
 
-The exported Lean result is:
+The reviewer-facing Lean result is:
+
+```lean
+theorem pinned_yul_runtime_matches_recover_model :
+  parseDeployedRuntime pinnedForsOptimizedYul = .ok forsVerifierRuntime ∧
+    ∀ raw digest, ForsAbiInput raw digest →
+      evmRunWithRuntime forsVerifierRuntime raw digest =
+        recoverOrZero raw digest
+```
+
+Expanded in plain language: Lean parses the tracked optimized-Yul artifact into
+the exact runtime used by the execution proof, and for every ABI-representable
+signature and digest, executing that runtime returns exactly the address returned
+by the clean Lean FORS+C recovery model. Model failure is represented as
+`address(0)`.
+
+Read the theorem surface in:
+
+- [`ReviewSurface.lean`](./ReviewSurface.lean)
+- [`REVIEW_PATH.md`](./REVIEW_PATH.md)
+- [`Audit.lean`](./Audit.lean)
+
+The lower-level execution result is:
 
 ```lean
 theorem phase4_forsRefines : ForsRefines
 ```
 
-The compiler-artifact result exported for review is:
+The older compiler-artifact theorem is still exported:
 
 ```lean
 theorem pinned_optimized_yul_refines :
@@ -71,18 +93,13 @@ theorem pinned_optimized_yul_refines :
     ForsRuntimeRefines runtime
 ```
 
-Expanded:
+Its internal refinement target is:
 
 ```lean
 def ForsRefines : Prop :=
   forall (raw : RawSig) (digest : Digest), ForsAbiInput raw digest ->
     evmRun raw digest = (recoverRaw? raw digest).getD 0
 ```
-
-In plain language: Lean parses the tracked optimized-Yul artifact into the
-runtime used by the proof, and for every ABI-representable signature and
-digest, executing that runtime returns exactly the address returned by the Lean
-FORS+C recovery model.
 
 The proof establishes all of the following:
 
@@ -172,8 +189,8 @@ contract called `ForsVerifier`. The deployed bytecode must be checked.
 
 ## Explicit trust boundary
 
-`#print axioms NiceTry.Fors.Bridge.pinned_optimized_yul_refines` reports Lean
-core principles plus exactly two project assumptions:
+`#print axioms NiceTry.Fors.Bridge.pinned_yul_runtime_matches_recover_model`
+reports Lean core principles plus exactly two project assumptions:
 
 1. `evm_keccak_transcript`: Keccak over the proved canonical EVM transcript
    bytes agrees with the model's opaque Keccak value.
@@ -279,10 +296,10 @@ The script:
 4. runs `lake build NiceTry`;
 5. prints the assumptions of the final theorem and supporting lemmas.
 
-Expected final theorem audit:
+Expected review theorem audit:
 
 ```text
-NiceTry.Fors.Bridge.pinned_optimized_yul_refines depends on:
+NiceTry.Fors.Bridge.pinned_yul_runtime_matches_recover_model depends on:
 propext
 Classical.choice
 Quot.sound

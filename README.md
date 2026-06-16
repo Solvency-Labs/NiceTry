@@ -34,17 +34,21 @@ for the `ForsVerifier.recover` runtime parsed from pinned `solc 0.8.30`
 optimized Yul.
 
 - [Plain-English safety briefing](docs/antonio-briefing.md)
+- [Step-by-step review path](verity/NiceTry/Fors/Bridge/REVIEW_PATH.md)
+- [Small Lean theorem surface](verity/NiceTry/Fors/Bridge/ReviewSurface.lean)
 - [Reviewer-facing verification report](verity/NiceTry/Fors/Bridge/VERIFICATION_REPORT.md)
 - [Verification workspace README](verity/README.md)
 - Reproduce with `./scripts/audit-fors-verifier.sh`
 - Check a deployment with
   `./scripts/check-deployed-fors-verifier.sh RPC_URL VERIFIER_ADDRESS`
 
-The final theorem covers dispatcher and ABI guards, rejection paths, all 25
-FORS tree openings, roots compression, and address return. Its project trust
-base is exactly `evm_keccak_transcript` and `ffi_kec_size`. A total Lean parser
-proves that the tracked optimized-Yul artifact imports to exactly the
-EVMYulLean runtime used by the execution proof. `solc` and deployed-bytecode
+The review theorem,
+`pinned_yul_runtime_matches_recover_model`, says the tracked optimized-Yul
+artifact parses to the exact EVMYulLean runtime used by the proof, and that
+runtime agrees with the clean FORS+C recovery model. The underlying execution
+proof covers dispatcher and ABI guards, rejection paths, all 25 FORS tree
+openings, roots compression, and address return. Its project trust base is
+exactly `evm_keccak_transcript` and `ffi_kec_size`. `solc` and deployed-bytecode
 identity remain explicit boundaries.
 
 Important: `recover` returns the address implied by the signature. Safe callers

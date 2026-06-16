@@ -21,6 +21,35 @@ executes the complete selector dispatcher and recovery function imported from
 the pinned compiler output into EVMYulLean, including every loop iteration and
 both rejection paths.
 
+## The theorem reviewers should read first
+
+The intentionally small theorem surface is in
+`verity/NiceTry/Fors/Bridge/ReviewSurface.lean`.
+
+The main review theorem is:
+
+```lean
+theorem pinned_yul_runtime_matches_recover_model :
+  parseDeployedRuntime pinnedForsOptimizedYul = .ok forsVerifierRuntime ∧
+    ∀ raw digest, ForsAbiInput raw digest →
+      evmRunWithRuntime forsVerifierRuntime raw digest =
+        recoverOrZero raw digest
+```
+
+In plain language:
+
+1. the pinned optimized-Yul artifact parses to the exact EVMYulLean runtime we
+   execute in Lean;
+2. for every ABI-representable signature and digest, that runtime returns the
+   same address as the clean FORS+C recovery model;
+3. when the model rejects, `recoverOrZero` matches the contract convention of
+   returning `address(0)`.
+
+The detailed review path is documented in
+`verity/NiceTry/Fors/Bridge/REVIEW_PATH.md`. It walks from the FORS+C Lean
+model, through the EVMYulLean execution proof, to the pinned compiler artifact
+and production deployment checks.
+
 ## Can we say it is safe to deploy?
 
 Yes, with explicit conditions.
@@ -88,10 +117,10 @@ and its
 
 The two projects prove different things:
 
-| Project | Cryptographic scope | Implementation correspondence |
-|---|---|---|
+| Project              | Cryptographic scope                                                                                                 | Implementation correspondence                                                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | SPHINCS- Verity work | Broader: complete C13 and SLH-DSA-style verifiers, including FORS/FORS+C, WOTS+/WOTS+C, and hypertree verification. | Its Verity models are hand-transcribed from production assembly. Its README says the models are not deployed, compiled into the contracts, or replayed against the on-chain verifier; correspondence rests on reviewing that transcription. |
-| This project | Narrower: the standalone FORS+C recovery component used by our wallet. | Stronger at the targeted runtime boundary: a total Lean parser imports the pinned optimized Yul, and EVMYulLean executes the resulting dispatcher, rejection paths, all 25 trees, roots compression, and address return. |
+| This project         | Narrower: the standalone FORS+C recovery component used by our wallet.                                              | Stronger at the targeted runtime boundary: a total Lean parser imports the pinned optimized Yul, and EVMYulLean executes the resulting dispatcher, rejection paths, all 25 trees, roots compression, and address return.                    |
 
 Their C13 theorem is a useful independent full-scheme reference. At the time of
 this briefing, their README reports three remaining residual assembly axioms
@@ -117,16 +146,16 @@ SPHINCS layers are intentionally outside this verifier's scope.
 
 The verifier proof does not establish all production security by itself.
 
-| Condition | Status | Why it matters |
-|---|---|---|
-| Verifier algorithm and low-level execution | Proved | The runtime parsed from pinned optimized Yul agrees with the Lean FORS+C recovery model. |
-| Optimized-Yul to EVMYulLean correspondence | Proved | Lean's kernel checks that parsing the tracked raw Yul produces exactly the runtime used by the execution proof. |
-| Solidity-to-optimized-Yul compilation | Trusted | We pin `solc 0.8.30`, but do not formally verify the compiler. |
-| Actual on-chain bytecode identity | Must be checked per deployment | The deployed bytecode must match the output produced by the pinned source and compiler settings. |
-| Keccak implementation and hash security | Trusted | The proof treats Keccak as the standard correct hash primitive. |
-| FORS+C unforgeability estimates | Inherited, not re-proved | The proof establishes correct implementation, not a new cryptographic security theorem. |
-| Signer key lifecycle | Operational requirement | Reusing a few-time key weakens security; normal operation must rotate and burn keys. |
-| Wallet and EntryPoint integration | Separate review scope | The theorem covers `ForsVerifier.recover`, not every wallet, bundler, signer, or recovery path. |
+| Condition                                  | Status                         | Why it matters                                                                                                  |
+| ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Verifier algorithm and low-level execution | Proved                         | The runtime parsed from pinned optimized Yul agrees with the Lean FORS+C recovery model.                        |
+| Optimized-Yul to EVMYulLean correspondence | Proved                         | Lean's kernel checks that parsing the tracked raw Yul produces exactly the runtime used by the execution proof. |
+| Solidity-to-optimized-Yul compilation      | Trusted                        | We pin `solc 0.8.30`, but do not formally verify the compiler.                                                  |
+| Actual on-chain bytecode identity          | Must be checked per deployment | The deployed bytecode must match the output produced by the pinned source and compiler settings.                |
+| Keccak implementation and hash security    | Trusted                        | The proof treats Keccak as the standard correct hash primitive.                                                 |
+| FORS+C unforgeability estimates            | Inherited, not re-proved       | The proof establishes correct implementation, not a new cryptographic security theorem.                         |
+| Signer key lifecycle                       | Operational requirement        | Reusing a few-time key weakens security; normal operation must rotate and burn keys.                            |
+| Wallet and EntryPoint integration          | Separate review scope          | The theorem covers `ForsVerifier.recover`, not every wallet, bundler, signer, or recovery path.                 |
 
 ## How compiler output enters the proof
 
@@ -146,9 +175,10 @@ The public result then combines that equality with the completed execution
 proof:
 
 ```lean
-∃ runtime,
-  parseDeployedRuntime pinnedForsOptimizedYul = .ok runtime ∧
-  ForsRuntimeRefines runtime
+parseDeployedRuntime pinnedForsOptimizedYul = .ok forsVerifierRuntime ∧
+  ∀ raw digest, ForsAbiInput raw digest →
+    evmRunWithRuntime forsVerifierRuntime raw digest =
+      recoverOrZero raw digest
 ```
 
 This is not a test that happened to pass once. The equality is a theorem
@@ -162,9 +192,11 @@ flowchart LR
     B --> C["Total Lean lexer, parser, and importer"]
     C --> D["EVMYulLean runtime"]
     D --> E["EVMYulLean execution"]
-    E --> F["phase4_forsRefines"]
+    E --> F["checked_runtime_matches_recover_model"]
     G["Verity FORS+C model"] --> F
-    F --> H["pinned_optimized_yul_refines"]
+    C --> H["pinned_yul_is_checked_runtime"]
+    F --> I["pinned_yul_runtime_matches_recover_model"]
+    H --> I
 ```
 
 The manual Yul-to-EVMYulLean transcription is therefore no longer trusted.

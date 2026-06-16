@@ -1,5 +1,4 @@
-import NiceTry.Fors.Bridge.ParsedRuntime
-import NiceTry.Fors.Proofs.Basic
+import NiceTry.Fors.Bridge.ReviewSurface
 
 /-!
 # FORS verifier audit
@@ -10,15 +9,24 @@ Run with:
 lake env lean NiceTry/Fors/Bridge/Audit.lean
 ```
 
-This file is intentionally not a Lake root, so ordinary builds stay quiet while
-reviewers retain a stable command for checking the exported theorem and its
-assumptions.
+This file gives reviewers a stable command for checking the simplified review
+surface and the assumptions below it.
 -/
+
+#check NiceTry.Fors.Bridge.pinned_yul_is_checked_runtime
+#check NiceTry.Fors.Bridge.checked_runtime_matches_recover_model
+#check NiceTry.Fors.Bridge.pinned_yul_runtime_matches_recover_model
+#check NiceTry.Fors.Bridge.legitimate_fors_signature_recovers_expected_address
 
 #check NiceTry.Fors.Bridge.phase4_forsRefines
 #check NiceTry.Fors.Bridge.parse_pinned_fors_runtime
 #check NiceTry.Fors.Bridge.pinned_optimized_yul_refines
 #check NiceTry.Fors.Proofs.Basic.legit_raw_signature_recovers_expected_address
+
+#print axioms NiceTry.Fors.Bridge.pinned_yul_is_checked_runtime
+#print axioms NiceTry.Fors.Bridge.checked_runtime_matches_recover_model
+#print axioms NiceTry.Fors.Bridge.pinned_yul_runtime_matches_recover_model
+#print axioms NiceTry.Fors.Bridge.legitimate_fors_signature_recovers_expected_address
 
 #print axioms NiceTry.Fors.Bridge.phase4_forsRefines
 #print axioms NiceTry.Fors.Bridge.parse_pinned_fors_runtime

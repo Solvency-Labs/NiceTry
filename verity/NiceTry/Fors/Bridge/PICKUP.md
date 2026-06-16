@@ -2,6 +2,10 @@
 
 ## Current checkpoint (2026-06-15) — pinned optimized Yul refinement complete
 
+- **Reviewer entrypoint:** read `ReviewSurface.lean` and `REVIEW_PATH.md` first.
+  The simplified public theorem is
+  `pinned_yul_runtime_matches_recover_model`: the pinned optimized-Yul artifact
+  parses to `forsVerifierRuntime`, and that runtime agrees with `recoverOrZero`.
 - **Final theorem:** `Phase4.phase4_forsRefines : ForsRefines` proves that the
   full runtime agrees with `recoverRaw?` on `ForsAbiInput`.
 - **Compiler artifact linked:** `ParsedRuntime.pinned_optimized_yul_refines`
@@ -28,9 +32,10 @@
   was added.
 - **Build/audit:** `lake build NiceTry` and
   `lake env lean NiceTry/Fors/Bridge/Audit.lean` are the release checks.
-  `#print axioms pinned_optimized_yul_refines` reports Lean core plus exactly 2
-  project axioms: `evm_keccak_transcript` and `ffi_kec_size`. There is no parser,
-  dispatcher, padding, codec, or numeric keccak-bound axiom and no `sorryAx`.
+  `#print axioms pinned_yul_runtime_matches_recover_model` reports Lean core
+  plus exactly 2 project axioms: `evm_keccak_transcript` and `ffi_kec_size`.
+  There is no parser, dispatcher, padding, codec, or numeric keccak-bound axiom
+  and no `sorryAx`.
 - **Obligation accounting (2026-06-13): 9 of 11 discharged; last 2 held as a
   documented boundary.** All keccak-transcript memory obligations (#1–#5, #7, #8)
   and both Class-A calldata obligations (#6, #11) are now `proved`, each backed by
