@@ -114,29 +114,46 @@ The remaining provenance boundary is outside Lean: pinned `solc 0.8.30` must be
 trusted to produce the optimized Yul and bytecode, and each deployment must be
 checked against that pinned output.
 
-## Step 5: Understand the auxiliary Verity kernels
+## Step 5: Do not confuse the real verifier with the helper verifier
 
-The repository also contains Verity-generated FORS kernels:
+There are two verifier-shaped things in this repository.
+
+The first one is the real verifier:
+
+- `ForsVerifier.sol`
+- the pinned optimized Yul produced from it
+- `forsVerifierRuntime`, the runtime Lean executes
+
+This is the one we care about for deployment. The main theorem proves that this
+real verifier returns the same address as the clean FORS+C model.
+
+The second one is a helper verifier generated through Verity. It lives in:
 
 - [`../Verity/GuardKernel.lean`](../Verity/GuardKernel.lean)
 - [`../Verity/TreeShapeKernel.lean`](../Verity/TreeShapeKernel.lean)
 - [`../Verity/TreeKeccakKernel.lean`](../Verity/TreeKeccakKernel.lean)
 - [`../Verity/FullVerifierKernel.lean`](../Verity/FullVerifierKernel.lean)
 
-These are useful reference artifacts and obligation accounting, but they are not
-the deployed-runtime theorem. Their status is tracked in
-[`OBLIGATIONS.md`](./OBLIGATIONS.md): nine of eleven local obligations are backed
-by Lean theorems, and two full-loop choreography obligations remain documented
-for the auxiliary kernel artifact.
+That helper verifier was useful while building and cross-checking the proof. It
+checks pieces of the same FORS logic in a different style. But it is not the
+contract we deploy, and it is not the runtime used by the final theorem.
 
-Important distinction:
+Its status is tracked in [`OBLIGATIONS.md`](./OBLIGATIONS.md). In simple terms:
 
-- `pinned_yul_runtime_matches_recover_model` certifies the parser-certified
-  deployed runtime.
-- The Verity kernels document and cross-check the generated-reference path.
+- the helper verifier has 11 checklist items;
+- 9 of them are proved;
+- the remaining 2 are about proving that the helper verifier's big 25-tree loop
+  writes the roots into memory correctly.
 
-Do not treat the two remaining Verity-kernel obligations as dependencies of the
-final deployed-runtime theorem.
+We already proved that big 25-tree loop for the real verifier. Proving the last
+2 checklist items for the helper verifier would mean doing a similar large proof
+again, but for code we do not deploy.
+
+So the review rule is:
+
+> Review `pinned_yul_runtime_matches_recover_model` for the real verifier. Treat
+> the Verity-generated helper verifier as useful background, not as part of the
+> final deployed-runtime claim.
 
 ## Step 6: Reproduce the audit
 
